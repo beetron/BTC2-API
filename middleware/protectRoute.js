@@ -3,8 +3,11 @@ import User from "../models/user.model.js";
 
 const protectRoute = async (req, res, next) => {
   try {
-    // Read token from cookies
-    const token = req.cookies.jwt;
+    // Check headers for jwt token via authorization
+    const authHeader = req.headers["authorization"];
+
+    // Split token from Bearer
+    const token = authHeader && authHeader.split(" ")[1];
 
     if (!token) {
       return res.status(401).json({ error: "Unauthorized" });

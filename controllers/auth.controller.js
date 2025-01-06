@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import User from "../models/user.model.js";
-import generateTokenAndSetCookie from "../utility/generateToken.js";
+import generateTokenAndReturn from "../utility/generateToken.js";
 
 // Signup
 export const signup = async (req, res) => {
@@ -46,7 +46,7 @@ export const signup = async (req, res) => {
 
     if (newUser) {
       // Generate JWT token
-      generateTokenAndSetCookie(newUser._id, res);
+      generateTokenAndReturn(newUser._id, res);
       await newUser.save();
 
       // Update the friend's friendList with the new user's _id
@@ -90,14 +90,15 @@ export const login = async (req, res) => {
     }
 
     // Generate token
-    generateTokenAndSetCookie(user._id, res);
+    generateTokenAndReturn(user._id, res);
 
-    res.status(200).json({
-      _id: user._id,
-      uniqueId: user.uniqueId,
-      nickname: user.nickname,
-      profilePhoto: user.profilePhoto,
-    });
+    // res.status(200).json({
+    //   _id: user._id,
+    //   uniqueId: user.uniqueId,
+    //   nickname: user.nickname,
+    //   profilePhoto: user.profilePhoto,
+    //   token,
+    // });
   } catch (error) {
     console.log("Error during login", error.message);
     res.status(500).json({ error: "Internal Server Error" });
