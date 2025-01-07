@@ -5,15 +5,10 @@ import generateTokenAndReturn from "../utility/generateToken.js";
 // Signup
 export const signup = async (req, res) => {
   try {
-    const { username, password, confirmPassword, uniqueId } = req.body;
+    const { username, password, uniqueId } = req.body;
 
     // Convert username to lowercase
     const usernameLowerCase = username.toLowerCase();
-
-    // Check if chosen passwords match
-    if (password != confirmPassword) {
-      return res.status(400).json({ error: "Password mismatch" });
-    }
 
     // Check if username is taken
     const user = await User.findOne({ username: usernameLowerCase });
