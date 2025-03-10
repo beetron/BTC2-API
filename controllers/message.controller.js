@@ -34,10 +34,11 @@ export const sendMessage = async (req, res) => {
     // Save database
     await Promise.all([conversation.save(), newMessage.save()]);
 
-    // Update messages to online users
+    // Notify receiver of new message if online
     const receiverSocketId = getReceiverSocketId(receiverId);
     if (receiverSocketId) {
-      io.to(receiverSocketId).emit("newMessage", newMessage);
+      console.log("Emitting newMessageSignal to receiver");
+      io.to(receiverSocketId).emit("newMessageSignal");
     }
 
     res.status(201).json(newMessage);
