@@ -40,32 +40,6 @@ export const sendMessage = async (req, res) => {
       io.to(receiverSocketId).emit("newMessage", newMessage);
     }
 
-    // Send push via OneSignal if user's not online
-    if (!receiverSocketId) {
-      console.log("Sending push to: " + receiverId);
-
-      const pushRes = await fetch(
-        "https://api.onesignal.com/notifications?c=push",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json; charset=utf-8",
-            Authorization: process.env.ONESIGNAL_API_KEY,
-          },
-          body: JSON.stringify({
-            app_id: process.env.ONESIGNAL_APP_ID,
-            target_channel: "push",
-            include_aliases: {
-              external_id: [receiverId],
-            },
-            contents: { en: "Update on prices" },
-          }),
-        }
-      );
-      const pushResParsed = await pushRes.json();
-      console.log("Push notification response: ", pushResParsed);
-    }
-
     res.status(201).json(newMessage);
   } catch (error) {
     console.log("Error in sendMessage controller: ", error.message);
