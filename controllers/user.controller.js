@@ -1,7 +1,9 @@
 import User from "../models/user.model.js";
 import Conversation from "../models/conversation.model.js";
 
+/////////////////////////////////////////////
 // Get user friend list
+/////////////////////////////////////////////
 export const getFriendList = async (req, res) => {
   try {
     const user = req.user;
@@ -53,7 +55,9 @@ export const getFriendList = async (req, res) => {
 // Block user
 // export const blockUser = async (req, res) => {};
 
+/////////////////////////////////////////////
 // Get pending user friend requests
+/////////////////////////////////////////////
 export const getFriendRequests = async (req, res) => {
   try {
     const user = req.user;
@@ -73,7 +77,9 @@ export const getFriendRequests = async (req, res) => {
   }
 };
 
+/////////////////////////////////////////////
 // Add friend request
+/////////////////////////////////////////////
 export const addFriendRequest = async (req, res) => {
   try {
     const user = req.user;
@@ -120,7 +126,9 @@ export const addFriendRequest = async (req, res) => {
   }
 };
 
+/////////////////////////////////////////////
 // Accept friend request
+/////////////////////////////////////////////
 export const acceptFriendRequest = async (req, res) => {
   // Get user data
   const user = req.user;
@@ -164,7 +172,9 @@ export const acceptFriendRequest = async (req, res) => {
   }
 };
 
+/////////////////////////////////////////////
 // Reject friend request
+/////////////////////////////////////////////
 export const rejectFriendRequest = async (req, res) => {
   // Get user data
   const user = req.user;
@@ -196,7 +206,9 @@ export const rejectFriendRequest = async (req, res) => {
   }
 };
 
+/////////////////////////////////////////////
 // Remove friend
+/////////////////////////////////////////////
 export const removeFriend = async (req, res) => {
   // Get user data
   const user = req.user;
@@ -239,7 +251,9 @@ export const removeFriend = async (req, res) => {
   }
 };
 
+/////////////////////////////////////////////
 // Update nickname
+/////////////////////////////////////////////
 export const updateNickname = async (req, res) => {
   // Get user data
   const user = req.user;
@@ -258,7 +272,9 @@ export const updateNickname = async (req, res) => {
   }
 };
 
+/////////////////////////////////////////////
 // Update uniqueId
+/////////////////////////////////////////////
 export const updateUniqueId = async (req, res) => {
   // Get user data
   const user = req.user;
@@ -283,5 +299,67 @@ export const updateUniqueId = async (req, res) => {
   } catch (error) {
     console.log("Error in updateUniqueId controller: ", error.message);
     res.status(500).json({ error: "Internal server error" });
+  }
+};
+/////////////////////////////////////////////
+// Register or update FCM token
+/////////////////////////////////////////////
+export const registerFcmToken = async (req, res) => {
+  const { token, device } = req.body;
+
+  console.log("Registering FCM device: ", device);
+
+  try {
+    if (!token) {
+      return res.status(400).json({ error: "FCM token is missing" });
+    }
+
+    const user = await User.findById(req.user._id);
+
+    // Check if token already exists
+    const tokenIndex = user.fcmTokens.findIndex((t) => t.token === token);
+
+    if (tokenIndex !== -1) {
+      // Update existing token with new device info
+      user.fcmTokens[tokenIndex].device =
+        device || user.fcmTokens[tokenIndex].device;
+
+      // Force modification to trigger updatedAt timestamp change
+      user.markModified("fcmTokens");
+    } else {
+      // Add new token
+      user.fcmTokens.push({ token, device: device || "unknown" });
+    }
+
+    await user.save();
+
+    return res.status(200).json({
+      message: tokenIndex !== -1 ? "FCM token updated" : "FCM token registered",
+    });
+  } catch (error) {
+    console.log("Error in registering FCM token: ", error.message);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+/////////////////////////////////////////////
+// Delete FCM token
+/////////////////////////////////////////////
+export const deleteFcmToken = async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ error: "Token is missing" });
+    }
+
+    const user = await User.findById(req.user._id);
+
+    user.fcmTokens = user.fcmTokens.filter((t) => t.token !== token);
+    await user.save();
+    return res.status(200).json({ message: "FCM token deleted" });
+  } catch (error) {
+    console.log("Error deleteing FCM token: ", error.message);
+    return res.status(500).json({ error: "Internal server error" });
   }
 };

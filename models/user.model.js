@@ -1,5 +1,14 @@
 import mongoose from "mongoose";
 
+// Separate schema for FCM tokens to keep track of timestamps individually
+const fcmTokenSchema = new mongoose.Schema(
+  {
+    token: String,
+    device: String,
+  },
+  { timestamps: true }
+);
+
 const userSchema = new mongoose.Schema(
   {
     username: {
@@ -53,6 +62,7 @@ const userSchema = new mongoose.Schema(
         default: [],
       },
     ],
+    fcmTokens: [fcmTokenSchema],
   },
   { timestamps: true }
 );

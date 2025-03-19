@@ -3,6 +3,9 @@
 
 .env
 
+# Firebase service account details
+firebase/serviceAccountKey.json
+
 ### Node ###
 # Logs
 logs

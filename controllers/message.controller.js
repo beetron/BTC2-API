@@ -1,6 +1,7 @@
 import Message from "../models/message.model.js";
 import Conversation from "../models/conversation.model.js";
 import { getReceiverSocketId, io } from "../socket/socket.js";
+import { notificationService } from "../services/notificationService.js";
 
 export const sendMessage = async (req, res) => {
   try {
@@ -37,8 +38,22 @@ export const sendMessage = async (req, res) => {
     // Notify receiver of new message if online
     const receiverSocketId = getReceiverSocketId(receiverId);
     if (receiverSocketId) {
-      console.log("Emitting newMessageSignal to receiver");
+      console.log("Receiver online, skipping FCM notification");
       io.to(receiverSocketId).emit("newMessageSignal");
+    } else {
+      // Send FCM notification if receiver is offline
+      console.log("Receiver offline, sending FCM notification");
+      const senderName = senderId.nickname;
+
+      await notificationService(receiverId, {
+        title: senderName,
+        body: text.length > 100 ? text.substring(0, 97) + "..." : text,
+        payload: {
+          messageId: newMessage._id.toString(),
+          senderId: senderId.toString(),
+          type: "chat_message",
+        },
+      });
     }
 
     res.status(201).json(newMessage);

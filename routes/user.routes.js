@@ -9,6 +9,8 @@ import {
   removeFriend,
   updateNickname,
   updateUniqueId,
+  registerFcmToken,
+  deleteFcmToken,
 } from "../controllers/user.controller.js";
 
 const router = express.Router();
@@ -21,5 +23,7 @@ router.put("/rejectfriend/:uniqueId", protectRoute, rejectFriendRequest);
 router.put("/removefriend/:uniqueId", protectRoute, removeFriend);
 router.put("/updatenickname/:nickname", protectRoute, updateNickname);
 router.put("/updateuniqueid/:uniqueId", protectRoute, updateUniqueId);
+router.put("/fcm/register", protectRoute, registerFcmToken);
+router.delete("/fcm/token", protectRoute, deleteFcmToken);
 
 export default router;
