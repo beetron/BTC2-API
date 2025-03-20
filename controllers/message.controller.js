@@ -2,7 +2,11 @@ import Message from "../models/message.model.js";
 import Conversation from "../models/conversation.model.js";
 import { getReceiverSocketId, io } from "../socket/socket.js";
 import { notificationService } from "../services/notificationService.js";
+import User from "../models/user.model.js";
 
+/////////////////////////////////////////////
+// Send message to user
+/////////////////////////////////////////////
 export const sendMessage = async (req, res) => {
   try {
     const { message } = req.body;
@@ -35,26 +39,29 @@ export const sendMessage = async (req, res) => {
     // Save database
     await Promise.all([conversation.save(), newMessage.save()]);
 
-    // Notify receiver of new message if online
+    // Always send socket notification if socket exists
     const receiverSocketId = getReceiverSocketId(receiverId);
     if (receiverSocketId) {
-      console.log("Receiver online, skipping FCM notification");
+      console.log("Receiver socket connected, sending real-time signal");
       io.to(receiverSocketId).emit("newMessageSignal");
     } else {
-      // Send FCM notification if receiver is offline
-      console.log("Receiver offline, sending FCM notification");
-      const senderName = senderId.nickname;
-
-      await notificationService(receiverId, {
-        title: senderName,
-        body: text.length > 100 ? text.substring(0, 97) + "..." : text,
-        payload: {
-          messageId: newMessage._id.toString(),
-          senderId: senderId.toString(),
-          type: "chat_message",
-        },
-      });
+      console.log("Receiver socket not connected");
     }
+
+    // Always send FCM notification regardless of socket connection
+    console.log("Sending FCM notification");
+    const sender = await User.findById(senderId);
+    const senderName = sender ? sender.nickname || "User" : "User";
+
+    await notificationService(receiverId, {
+      title: "BTC2: " + senderName,
+      body: message.length > 20 ? message.substring(0, 17) + "..." : message,
+      payload: {
+        messageId: newMessage._id.toString(),
+        senderId: senderId.toString(),
+        type: "chat_message",
+      },
+    });
 
     res.status(201).json(newMessage);
   } catch (error) {
@@ -63,6 +70,9 @@ export const sendMessage = async (req, res) => {
   }
 };
 
+/////////////////////////////////////////////
+// Get messages between user and friend
+/////////////////////////////////////////////
 export const getMessages = async (req, res) => {
   try {
     const { id: friendId } = req.params;

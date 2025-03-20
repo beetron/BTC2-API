@@ -37,7 +37,7 @@ export const notificationService = async (recipientId, data) => {
     // Handle failed tokens
     if (response.failureCount > 0) {
       const failedTokens = [];
-      response.responses.ForEach((resp, idx) => {
+      response.responses.forEach((resp, idx) => {
         if (!resp.success) {
           failedTokens.push(tokens[idx]);
         }
