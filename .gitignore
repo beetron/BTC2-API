@@ -6,6 +6,8 @@
 # Firebase service account details
 firebase/serviceAccountKey.json
 
+*.pem
+
 ### Node ###
 # Logs
 logs
