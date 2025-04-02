@@ -9,7 +9,7 @@ export const notificationService = async (recipientId, data) => {
       !recipient.fcmTokens ||
       recipient.fcmTokens.length === 0
     ) {
-      console.log("No FCM tokens found for user ${recipientId}");
+      console.log(`No FCM tokens found for user ${recipientId}`);
       return;
     }
 
