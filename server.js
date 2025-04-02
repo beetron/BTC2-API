@@ -1,7 +1,6 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import path from "path";
 import express from "express";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.routes.js";
@@ -12,9 +11,6 @@ import connectToMongoDB from "./db/connectToMongoDB.js";
 import { app, server } from "./socket/socket.js";
 
 const PORT = process.env.PORT;
-
-// Set root directory
-const __dirname = path.resolve();
 
 // Middleware to parse JSON bodies
 app.use(express.json());

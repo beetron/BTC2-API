@@ -2,12 +2,19 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import { Server } from "socket.io";
-import http from "http";
+import https from "https";
 import express from "express";
-
+import fs from "fs";
 const app = express();
 
-const server = http.createServer(app);
+const server = https.createServer(
+  {
+    key: fs.readFileSync(process.env.SSL_KEY_PATH),
+    cert: fs.readFileSync(process.env.SSL_CERT_PATH),
+  },
+  app
+);
+
 const io = new Server(server, {
   cors: {
     origin: [process.env.DEVELOPMENT_URL, process.env.PRODUCTION_URL],
@@ -33,10 +40,6 @@ io.on("connection", (socket) => {
   } else {
     console.log("Invalid userId:", userId);
   }
-
-  // if (userId != "undefined") {
-  //   userSocketMap[userId] = socket.id;
-  // }
 
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
