@@ -8,6 +8,9 @@ firebase/serviceAccountKey.json
 
 *.pem
 
+# File uploads (images)
+users/*
+
 ### Node ###
 # Logs
 logs

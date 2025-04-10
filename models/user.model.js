@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { API_URL } from "../constants/api.js";
 
 // Separate schema for FCM tokens to keep track of timestamps individually
 const fcmTokenSchema = new mongoose.Schema(
@@ -40,6 +41,9 @@ const userSchema = new mongoose.Schema(
     profilePhoto: {
       type: String,
       default: "",
+      get: function (photo) {
+        return photo ? `${API_URL}/users/profilePhoto/${photo}` : null;
+      },
     },
     friendRequests: [
       {
