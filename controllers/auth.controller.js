@@ -29,13 +29,13 @@ export const signup = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // Avatar placeholder
-    const maleProfilePic = "/placeholder_profile_pic.png";
+    const defaultProfileImage = "default.png";
 
     // Friend that shared uniqueId is added to friendList
     const newUser = new User({
       username: usernameLowerCase,
       password: hashedPassword,
-      profilePhoto: maleProfilePic,
+      profileImage: defaultProfileImage,
       friendList: [friend._id],
     });
 
@@ -53,7 +53,7 @@ export const signup = async (req, res) => {
         _id: newUser._id,
         nickname: newUser.nickname,
         uniqueId: newUser.uniqueId,
-        profilePhoto: newUser.profilePhoto,
+        profileImage: newUser.profileImage,
         token,
       });
     }
@@ -92,7 +92,7 @@ export const login = async (req, res) => {
       _id: user._id,
       uniqueId: user.uniqueId,
       nickname: user.nickname,
-      profilePhoto: user.profilePhoto,
+      profileImage: user.profileImage,
       token,
     });
   } catch (error) {

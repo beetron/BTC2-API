@@ -9,6 +9,7 @@ import {
   removeFriend,
   updateNickname,
   updateUniqueId,
+  updateProfileImage,
   registerFcmToken,
   deleteFcmToken,
 } from "../controllers/user.controller.js";
@@ -23,9 +24,9 @@ const __dirname = path.dirname(__filename);
 const router = express.Router();
 
 // Route for physically stored profile photos
-router.get("/profilePhoto/:filename", protectRoute, (req, res) => {
+router.get("/profileImage/:filename", protectRoute, (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, "../users/profilePhoto", filename);
+  const filePath = path.join(__dirname, "../users/profileImage", filename);
 
   // Check if file exists
   if (!fs.existsSync(filePath)) {
@@ -44,6 +45,7 @@ router.put("/rejectfriend/:uniqueId", protectRoute, rejectFriendRequest);
 router.put("/removefriend/:uniqueId", protectRoute, removeFriend);
 router.put("/updatenickname/:nickname", protectRoute, updateNickname);
 router.put("/updateuniqueid/:uniqueId", protectRoute, updateUniqueId);
+router.put("/updateprofileimage/:data", protectRoute, updateProfileImage);
 router.put("/fcm/register", protectRoute, registerFcmToken);
 router.delete("/fcm/token", protectRoute, deleteFcmToken);
 

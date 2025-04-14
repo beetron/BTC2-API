@@ -38,11 +38,11 @@ const userSchema = new mongoose.Schema(
         return this.username;
       },
     },
-    profilePhoto: {
+    profileImage: {
       type: String,
       default: "",
       get: function (photo) {
-        return photo ? `${API_URL}/users/profilePhoto/${photo}` : null;
+        return photo ? `${API_URL}/users/profileImage/${photo}` : null;
       },
     },
     friendRequests: [
