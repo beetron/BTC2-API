@@ -41,9 +41,6 @@ const userSchema = new mongoose.Schema(
     profileImage: {
       type: String,
       default: "",
-      get: function (photo) {
-        return photo ? `${API_URL}/users/profileImage/${photo}` : null;
-      },
     },
     friendRequests: [
       {
