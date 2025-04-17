@@ -18,7 +18,7 @@ export const getFriendList = async (req, res) => {
     // Get user data based off of objectIdFriendList
     const friendListData = await User.find({
       _id: { $in: friendList },
-    }).select("nickname profilePhoto");
+    }).select("nickname profileImage");
 
     // Check for unread message status with each friend
     const friendListWithUnreadStatus = await Promise.all(
@@ -301,6 +301,32 @@ export const updateUniqueId = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
+/////////////////////////////////////////////
+// Update profile image
+/////////////////////////////////////////////
+export const updateProfileImage = async (req, res) => {
+  // Get user data
+  const user = req.user;
+
+  // Retrieve uniqueId from request params
+  const { profileImage, profileImageData } = req.params;
+
+  const defaultImage = "default.png";
+
+  try {
+    if (profileImage && profileImage !== defaultImage) {
+      // Remove previous image if it exists
+      // randomly generate a new name for the file
+      // check if randomly generated name already exists
+      // place profileImageData in /users/profileImages
+      // update database with new file link.
+
+      return res.status(200).json({ message: "Profile image updated" });
+    }
+  } catch (error) {}
+};
+
 /////////////////////////////////////////////
 // Register or update FCM token
 /////////////////////////////////////////////
