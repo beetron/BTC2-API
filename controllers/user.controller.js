@@ -1,5 +1,7 @@
 import User from "../models/user.model.js";
 import Conversation from "../models/conversation.model.js";
+import fs from "fs-extra";
+import path from "path";
 
 /////////////////////////////////////////////
 // Get user friend list
@@ -306,25 +308,39 @@ export const updateUniqueId = async (req, res) => {
 // Update profile image
 /////////////////////////////////////////////
 export const updateProfileImage = async (req, res) => {
-  // Get user data
-  const user = req.user;
-
-  // Retrieve uniqueId from request params
-  const { profileImage, profileImageData } = req.params;
-
-  const defaultImage = "default.png";
-
   try {
-    if (profileImage && profileImage !== defaultImage) {
-      // Remove previous image if it exists
-      // randomly generate a new name for the file
-      // check if randomly generated name already exists
-      // place profileImageData in /users/profileImages
-      // update database with new file link.
+    // Get user data
+    const user = req.user;
+    // New profile image data from request body
+    const file = req.file;
 
-      return res.status(200).json({ message: "Profile image updated" });
+    if (file) {
+      // Check and remove existing profile image if it exists
+      if (user.profileImage) {
+        const existingImagePath = path.join(
+          "users/profileImage",
+          user.profileImage
+        );
+        try {
+          await fs.remove(existingImagePath);
+        } catch (error) {
+          console.log("Error removing existing profile image: ", error);
+        }
+      }
+
+      // Update user's profile image link in database
+      user.profileImage = file.filename;
+      await user.save();
+
+      return res.status(200).json({
+        message: "Profile image updated",
+        profileImage: file.filename,
+      });
     }
-  } catch (error) {}
+  } catch (error) {
+    console.log("Error in updateProfileImage controller: ", error.message);
+    return res.status(500).json({ error: "Internal server error" });
+  }
 };
 
 /////////////////////////////////////////////

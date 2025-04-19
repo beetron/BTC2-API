@@ -1,5 +1,6 @@
 import express from "express";
 import protectRoute from "../middleware/protectRoute.js";
+import uploadFile from "../middleware/uploadFile.js";
 import {
   getFriendList,
   getFriendRequests,
@@ -45,7 +46,12 @@ router.put("/rejectfriend/:uniqueId", protectRoute, rejectFriendRequest);
 router.put("/removefriend/:uniqueId", protectRoute, removeFriend);
 router.put("/updatenickname/:nickname", protectRoute, updateNickname);
 router.put("/updateuniqueid/:uniqueId", protectRoute, updateUniqueId);
-router.put("/updateprofileimage/:data", protectRoute, updateProfileImage);
+router.put(
+  "/updateprofileimage/",
+  protectRoute,
+  uploadFile,
+  updateProfileImage
+);
 router.put("/fcm/register", protectRoute, registerFcmToken);
 router.delete("/fcm/token", protectRoute, deleteFcmToken);
 

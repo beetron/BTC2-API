@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-import { API_URL } from "../constants/api.js";
 
 // Separate schema for FCM tokens to keep track of timestamps individually
 const fcmTokenSchema = new mongoose.Schema(
