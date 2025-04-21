@@ -1,6 +1,7 @@
 import express from "express";
 import protectRoute from "../middleware/protectRoute.js";
-import uploadFile from "../middleware/uploadFile.js";
+// import uploadFile from "../middleware/uploadFile.js";
+import { uploadFile, resizeImage } from "../middleware/uploadFile.js";
 import {
   getFriendList,
   getFriendRequests,
@@ -50,6 +51,7 @@ router.put(
   "/updateprofileimage/",
   protectRoute,
   uploadFile,
+  resizeImage,
   updateProfileImage
 );
 router.put("/fcm/register", protectRoute, registerFcmToken);

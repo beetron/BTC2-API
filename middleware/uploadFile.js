@@ -1,16 +1,8 @@
 import multer from "multer";
-import path from "path";
 import { v4 as uuidv4 } from "uuid";
+import sharp from "sharp";
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "users/profileImage");
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = uuidv4() + path.extname(file.originalname);
-    cb(null, uniqueSuffix);
-  },
-});
+const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith("image/")) {
@@ -23,9 +15,31 @@ const fileFilter = (req, file, cb) => {
 const uploadFile = multer({
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5 MB limit
+    fileSize: 20 * 1024 * 1024, // 20 MB limit
   },
   fileFilter: fileFilter,
 }).single("profileImage");
 
-export default uploadFile;
+const resizeImage = async (req, next) => {
+  if (!req.file) return next();
+
+  const filename = uuidv4() + ".jpg";
+
+  try {
+    await sharp(req.file.buffer)
+      .resize(300, 300, {
+        fit: "cover",
+        position: "center",
+      })
+      .toFormat("jpeg")
+      .jpeg({ quality: 90 })
+      .toFile(`users/profileImage/${filename}`);
+
+    req.file.filename = filename;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export { uploadFile, resizeImage };
