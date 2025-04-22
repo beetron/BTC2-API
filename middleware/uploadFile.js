@@ -20,7 +20,7 @@ const uploadFile = multer({
   fileFilter: fileFilter,
 }).single("profileImage");
 
-const resizeImage = async (req, next) => {
+const resizeImage = async (req, res, next) => {
   if (!req.file) return next();
 
   const filename = uuidv4() + ".jpg";
@@ -38,6 +38,7 @@ const resizeImage = async (req, next) => {
     req.file.filename = filename;
     next();
   } catch (error) {
+    console.error("Error resizing image: ", error);
     next(error);
   }
 };
