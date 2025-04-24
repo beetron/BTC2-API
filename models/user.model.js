@@ -15,12 +15,13 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       minlength: 6,
+      maxLength: 20,
       unique: true,
     },
     uniqueId: {
       type: String,
       minLength: 6,
-      maxLength: 18,
+      maxLength: 20,
       unique: true,
       default: function () {
         return this.username;
@@ -33,6 +34,8 @@ const userSchema = new mongoose.Schema(
     },
     nickname: {
       type: String,
+      minLength: 6,
+      maxLength: 20,
       default: function () {
         return this.username;
       },
