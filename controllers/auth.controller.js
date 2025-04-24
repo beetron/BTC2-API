@@ -3,6 +3,7 @@ import User from "../models/user.model.js";
 import generateToken from "../utility/generateToken.js";
 
 // Signup
+// (signup assigns username as the default uniqueId)
 export const signup = async (req, res) => {
   try {
     const { username, password, uniqueId } = req.body;
@@ -10,10 +11,11 @@ export const signup = async (req, res) => {
     // Convert username to lowercase
     const usernameLowerCase = username.toLowerCase();
 
-    // Check if username is taken
+    // Check if username & unique ID is taken
     const user = await User.findOne({ username: usernameLowerCase });
+    const newUniqueId = await User.findOne({ uniqueId: usernameLowerCase });
 
-    if (user) {
+    if (user || newUniqueId) {
       return res.status(400).json({ error: "Username is taken" });
     }
 
