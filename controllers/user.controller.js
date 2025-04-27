@@ -2,6 +2,7 @@ import User from "../models/user.model.js";
 import Conversation from "../models/conversation.model.js";
 import fs from "fs-extra";
 import path from "path";
+import bcrypt from "bcryptjs";
 
 /////////////////////////////////////////////
 // Get user friend list
@@ -70,7 +71,7 @@ export const getFriendRequests = async (req, res) => {
     // Get user data based off of objectId friendRequests
     const friendRequestsIds = await User.find({
       _id: { $in: friendRequests },
-    }).select("_id uniqueId nickname profilePhoto");
+    }).select("_id uniqueId nickname profileImage");
 
     res.status(200).json(friendRequestsIds);
   } catch (error) {
@@ -249,6 +250,50 @@ export const removeFriend = async (req, res) => {
     return res.status(200).json({ message: "Friend removed" });
   } catch (error) {
     console.log("Error in removeFriend controller: ", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+/////////////////////////////////////////////
+// Change password
+/////////////////////////////////////////////
+export const changePassword = async (req, res) => {
+  try {
+    // Get user data
+    const userId = req.user;
+
+    // Retrieve password from request body
+    const { password } = req.body;
+
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ error: "User not found, or session expired" });
+    }
+    const user = await User.findById(userId);
+
+    // Check if password is the same as the current password
+    const isSamePassword = await bcrypt.compare(password, user.password);
+
+    if (isSamePassword) {
+      return res
+        .status(400)
+        .json({
+          error: "New password cannot be the same as the current password",
+        });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Update user's password in database
+    user.password = hashedPassword;
+    await user.save();
+
+    return res.status(200).json({ message: "Password updated" });
+  } catch (error) {
+    console.log("Error in changePassword controller: ", error.message);
     res.status(500).json({ error: "Internal server error" });
   }
 };

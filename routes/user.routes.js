@@ -14,6 +14,7 @@ import {
   updateProfileImage,
   registerFcmToken,
   deleteFcmToken,
+  changePassword,
 } from "../controllers/user.controller.js";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -45,6 +46,7 @@ router.put("/addfriend/:uniqueId", protectRoute, addFriendRequest);
 router.put("/acceptfriend/:uniqueId", protectRoute, acceptFriendRequest);
 router.put("/rejectfriend/:uniqueId", protectRoute, rejectFriendRequest);
 router.put("/removefriend/:uniqueId", protectRoute, removeFriend);
+router.put("/changepassword", protectRoute, changePassword);
 router.put("/updatenickname/:nickname", protectRoute, updateNickname);
 router.put("/updateuniqueid/:uniqueId", protectRoute, updateUniqueId);
 router.put(
