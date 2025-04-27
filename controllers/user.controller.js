@@ -142,12 +142,16 @@ export const acceptFriendRequest = async (req, res) => {
   try {
     // Find user sending the friend request
     const requestSender = await User.findOne({ uniqueId }).select(
-      "_id friendList"
+      "_id friendList friendRequests"
     );
+
+    console.log("Request sender: ", requestSender);
 
     // Check if requester exists
     if (!requestSender) {
-      return res.status(400).json({ error: "User not found" });
+      return res
+        .status(400)
+        .json({ error: "User not found, or no longer a user" });
     }
 
     // Check if requester is already a friend
@@ -163,6 +167,11 @@ export const acceptFriendRequest = async (req, res) => {
 
     // Save user database
     user.save();
+
+    // Remove user from pending friend requests of requestSender if exists
+    if (requestSender.friendRequests.includes(user._id)) {
+      requestSender.friendRequests.pull(user._id);
+    }
 
     // Update and save requestSender's friend list
     requestSender.friendList.push(user._id);
@@ -276,11 +285,9 @@ export const changePassword = async (req, res) => {
     const isSamePassword = await bcrypt.compare(password, user.password);
 
     if (isSamePassword) {
-      return res
-        .status(400)
-        .json({
-          error: "New password cannot be the same as the current password",
-        });
+      return res.status(400).json({
+        error: "New password cannot be the same as the current password",
+      });
     }
 
     // Hash password
