@@ -73,7 +73,7 @@ export const login = async (req, res) => {
     // Search for username
     const user = await User.findOne({ username: usernameLowerCase });
 
-    // Check passwored integrity
+    // Check password integrity
     const isPasswordCorrect = await bcrypt.compare(
       password,
       user?.password || ""
