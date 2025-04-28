@@ -21,7 +21,7 @@ export const getFriendList = async (req, res) => {
     // Get user data based off of objectIdFriendList
     const friendListData = await User.find({
       _id: { $in: friendList },
-    }).select("nickname profileImage");
+    }).select("nickname profileImage uniqueId");
 
     // Check for unread message status with each friend
     const friendListWithUnreadStatus = await Promise.all(
@@ -202,7 +202,9 @@ export const rejectFriendRequest = async (req, res) => {
 
     // Check if requester exists
     if (!requestSender) {
-      return res.status(400).json({ error: "User not found" });
+      return res
+        .status(400)
+        .json({ error: "User not found, or no longer a user" });
     }
 
     // Remove requestSender from user's friendRequests
@@ -236,7 +238,9 @@ export const removeFriend = async (req, res) => {
 
     // Check if friend exists
     if (!friendToRemove) {
-      return res.status(400).json({ error: "User not found" });
+      return res
+        .status(400)
+        .json({ error: "User not found, or no longer a user" });
     }
 
     // Check if friend is not in friend list
