@@ -166,7 +166,7 @@ export const acceptFriendRequest = async (req, res) => {
     user.friendRequests.pull(requestSender._id);
 
     // Save user database
-    user.save();
+    await user.save();
 
     // Remove user from pending friend requests of requestSender if exists
     if (requestSender.friendRequests.includes(user._id)) {
@@ -175,7 +175,7 @@ export const acceptFriendRequest = async (req, res) => {
 
     // Update and save requestSender's friend list
     requestSender.friendList.push(user._id);
-    requestSender.save();
+    await requestSender.save();
 
     return res.status(200).json({ message: "Friend request accepted" });
   } catch (error) {
@@ -211,7 +211,7 @@ export const rejectFriendRequest = async (req, res) => {
     user.friendRequests.pull(requestSender._id);
 
     // Save user database
-    user.save();
+    await user.save();
 
     return res.status(200).json({ message: "Denied friend request" });
   } catch (error) {
@@ -243,7 +243,7 @@ export const removeFriend = async (req, res) => {
         .json({ error: "User not found, or no longer a user" });
     }
 
-    // Check if friend is not in friend list
+    // Check if friend is not in user's friend list
     if (!user.friendList.includes(friendToRemove._id)) {
       return res.status(400).json({ error: "User not in friend list" });
     }
@@ -255,10 +255,10 @@ export const removeFriend = async (req, res) => {
     friendToRemove.friendList.pull(user._id);
 
     // Save user database
-    user.save();
+    await user.save();
 
     // Save friendToRemove database
-    friendToRemove.save();
+    await friendToRemove.save();
 
     return res.status(200).json({ message: "Friend removed" });
   } catch (error) {
