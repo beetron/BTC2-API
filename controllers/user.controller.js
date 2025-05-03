@@ -1,5 +1,5 @@
 import User from "../models/user.model.js";
-import Conversation from "../models/conversation.model.js";
+import UserConversation from "../models/userConversation.model.js";
 import fs from "fs-extra";
 import path from "path";
 import bcrypt from "bcryptjs";
@@ -26,29 +26,33 @@ export const getFriendList = async (req, res) => {
     // Check for unread message status with each friend
     const friendListWithUnreadStatus = await Promise.all(
       friendListData.map(async (friend) => {
-        const conversation = await Conversation.findOne({
-          participants: { $all: [user._id, friend._id] },
-        }).populate("messages");
-
-        let unreadMessages = false;
-
-        // Get last updated timestamp for each conversation
-        const updatedAt = conversation ? conversation.updatedAt : null;
-
-        if (conversation) {
-          unreadMessages = conversation.messages.some(
-            (message) => !message.readBy.includes(user._id)
-          );
-        }
+        // Find conversation where user is the sender and friend is receiver
+        const conversation = await UserConversation.findOne({
+          senderId: user._id,
+          receiverId: friend._id,
+        });
 
         return {
           ...friend.toObject(),
-          unreadMessages,
-          updatedAt,
+          unreadCount: conversation ? conversation.unreadCount : 0,
+          updatedAt: conversation ? conversation.updatedAt : null,
         };
       })
     );
-    res.status(200).json(friendListWithUnreadStatus);
+
+    // Sort by most recent conversation and unread messages first
+    const sortedFriendList = friendListWithUnreadStatus.sort((a, b) => {
+      // First sort by unread count (higher first)
+      if (b.unreadCount !== a.unreadCount) {
+        return b.unreadCount - a.unreadCount;
+      }
+      // Then sort by updatedAt (most recent first)
+      if (!a.updatedAt) return 1;
+      if (!b.updatedAt) return -1;
+      return new Date(b.updatedAt) - new Date(a.updatedAt);
+    });
+
+    res.status(200).json(sortedFriendList);
   } catch (error) {
     console.log("Error in getFriendList controller: ", error.message);
     res.status(500).json({ error: "Internal server error" });
