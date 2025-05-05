@@ -15,12 +15,16 @@ const server = https.createServer(
   app
 );
 
-const io = new Server(server, {
-  cors: {
-    origin: [process.env.DEVELOPMENT_URL, process.env.PRODUCTION_URL],
-    methods: ["GET", "POST"],
-  },
-});
+const io = new Server(server);
+
+// Use if you will access API via browser
+//
+// const io = new Server(server, {
+//   cors: {
+//     origin: [process.env.DEVELOPMENT_URL, process.env.PRODUCTION_URL],
+//     methods: ["GET", "POST"],
+//   },
+// });
 
 export const getReceiverSocketId = (receiverId) => {
   return userSocketMap[receiverId];
@@ -41,14 +45,15 @@ io.on("connection", (socket) => {
     console.log("Invalid userId:", userId);
   }
 
-  io.emit("getOnlineUsers", Object.keys(userSocketMap));
+  // Check for online users for future use
+  // io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
   socket.on("disconnect", () => {
     console.log("client has disconnected", socket.id);
     if (userId && userId !== "undefined") {
       delete userSocketMap[userId];
     }
-    io.emit("getOnlineUsers", Object.keys(userSocketMap));
+    // io.emit("getOnlineUsers", Object.keys(userSocketMap));
   });
 });
 
