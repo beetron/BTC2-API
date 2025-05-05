@@ -1,5 +1,7 @@
 import admin from "../firebase/firebaseAdmin.js";
 import User from "../models/user.model.js";
+import UserConversation from "../models/userConversation.model.js";
+import { ObjectId } from "mongodb";
 
 export const notificationService = async (recipientId, data) => {
   try {
@@ -15,18 +17,35 @@ export const notificationService = async (recipientId, data) => {
 
     const tokens = recipient.fcmTokens.map((t) => t.token);
 
+    // Convert recipientId to mongo ObjectId
+    const ownerObjectId = new ObjectId(`${recipientId}`);
+
+    // aggregate unreadCount across *recipient* conversations
+    const [{ totalUnread = 0 } = {}] = await UserConversation.aggregate([
+      {
+        $match: { senderId: ownerObjectId },
+      },
+      {
+        $group: {
+          _id: null,
+          totalUnread: { $sum: "$unreadCount" },
+        },
+      },
+    ]);
+
     const message = {
       tokens: tokens,
       notification: {
         title: data.title || "New Update",
-        body: data.body || "You have a new message",
+        // body: data.body || "You have a new message",
+        body: "",
       },
       data: data.payload || {},
       apns: {
         payload: {
           aps: {
             sound: "default",
-            badge: 1,
+            badge: totalUnread,
           },
         },
       },
