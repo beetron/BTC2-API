@@ -409,7 +409,7 @@ export const updateProfileImage = async (req, res) => {
 export const registerFcmToken = async (req, res) => {
   const { token, device } = req.body;
 
-  console.log("Registering FCM device: ", device);
+  console.log("user.controller, registerFcmToken called: ", device);
 
   try {
     if (!token) {
@@ -427,7 +427,8 @@ export const registerFcmToken = async (req, res) => {
         device || user.fcmTokens[tokenIndex].device;
 
       // Force modification to trigger updatedAt timestamp change
-      user.markModified("fcmTokens");
+      // user.markModified("fcmTokens");
+      user.markModified(`fcmTokens.${tokenIndex}`);
     } else {
       // Add new token
       user.fcmTokens.push({ token, device: device || "unknown" });
