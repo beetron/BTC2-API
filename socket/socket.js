@@ -7,10 +7,21 @@ import express from "express";
 import fs from "fs";
 const app = express();
 
+const appEnvironment = process.env.NODE_ENV;
+let sslKeyPath;
+let sslCertPath;
+if (appEnvironment === "production") {
+  sslKeyPath = process.env.SSL_KEY_PATH;
+  sslCertPath = process.env.SSL_CERT_PATH;
+} else {
+  sslKeyPath = process.env.DEV_SSL_KEY_PATH;
+  sslCertPath = process.env.DEV_SSL_CERT_PATH;
+}
+
 const server = https.createServer(
   {
-    key: fs.readFileSync(process.env.SSL_KEY_PATH),
-    cert: fs.readFileSync(process.env.SSL_CERT_PATH),
+    key: fs.readFileSync(sslKeyPath),
+    cert: fs.readFileSync(sslCertPath),
   },
   app
 );
