@@ -4,12 +4,12 @@
 .env
 
 # Firebase service account details
-firebase/serviceAccountKey.json
+src/firebase/serviceAccountKey.json
 
 *.pem
 
 # File uploads (images)
-users/*
+src/users/*
 
 ### Node ###
 # Logs

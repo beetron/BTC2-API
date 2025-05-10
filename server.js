@@ -3,11 +3,11 @@ dotenv.config();
 
 import express from "express";
 import cookieParser from "cookie-parser";
-import authRoutes from "./routes/auth.routes.js";
-import messageRoutes from "./routes/messages.routes.js";
-import userRoutes from "./routes/user.routes.js";
-import connectToMongoDB from "./db/connectToMongoDB.js";
-import { app, server } from "./socket/socket.js";
+import authRoutes from "./src/routes/auth.routes.js";
+import messageRoutes from "./src/routes/messages.routes.js";
+import userRoutes from "./src/routes/user.routes.js";
+import connectToMongoDB from "./src/db/connectToMongoDB.js";
+import { app, server } from "./src/socket/socket.js";
 
 const PORT = process.env.PORT;
 
