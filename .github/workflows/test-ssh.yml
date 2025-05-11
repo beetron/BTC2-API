@@ -1,5 +1,5 @@
 name: Test SSH Connection
-on: [workflow_dispatch]  # Manual trigger
+on: [workflow_dispatch] # Manual trigger
 
 jobs:
   test-ssh:
@@ -12,6 +12,6 @@ jobs:
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            echo "Successfully connected to VPS!"
+            echo "Successfully connected to server"
             pwd
             whoami
