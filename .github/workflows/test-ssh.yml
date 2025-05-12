@@ -6,12 +6,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Test SSH connection
-        uses: appleboy/ssh-action@v0.1.8
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_HOSTNAME }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            echo "Successfully connected to server"
-            pwd
-            whoami
+          script: whoami
