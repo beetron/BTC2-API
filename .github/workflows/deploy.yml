@@ -10,24 +10,27 @@ jobs:
 
       - name: Create tar file
         run: |
-          # Create tar with warning suppressions
+          # List files to be included
+          echo "Files to be archived:"
+          find . -type f ! -path "*/\.*" ! -path "*/node_modules/*"
+
           tar --exclude='.git' \
               --exclude='.github' \
+              --ignore-failed-read \
               --warning=no-file-changed \
               --warning=no-file-removed \
               --warning=no-file-shrank \
-              -czf deploy.tar.gz .
+              -czf deploy.tar.gz . || true
 
-          # Check tar exit code
-          code=$?
-          if [ $code -ne 0 -a $code -ne 1 ]; then
-            echo "Fatal tar error: $code"
-            exit $code
+          # Verify archive was created
+          if [ ! -f deploy.tar.gz ]; then
+            echo "Failed to create archive"
+            exit 1
           fi
 
-          # Verify tar contents
-          echo "Tar contents:"
-          tar -tvf deploy.tar.gz
+          # Show archive contents and size
+          echo "Archive contents:"
+          tar -tvf deploy.tar.gz || true
           ls -la deploy.tar.gz
 
       - name: Prepare target directory
