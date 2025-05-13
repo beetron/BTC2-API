@@ -22,8 +22,9 @@ jobs:
           touch deploy.tar.gz
           tar --exclude='.git' --exclude='node_modules' -czf deploy.tar.gz .
 
-          # Transfer file to server
-          scp -i ~/.ssh/deploy_key deploy.tar.gz ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOSTNAME }}:~/docker/
+          # Create target directory and transfer file
+          ssh -i ~/.ssh/deploy_key ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOSTNAME }} 'mkdir -p ~/docker/btc2-api'
+          scp -i ~/.ssh/deploy_key deploy.tar.gz ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOSTNAME }}:~/docker/btc2-api/
 
           # Clean up local files
           rm deploy.tar.gz
@@ -45,9 +46,8 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           envs: PORT,NODE_ENV,MONGO_DB_URI,JWT_SECRET,FIREBASE_KEY,SSL_CERT,SSL_KEY,PRODUCTION_URL
           script: |
-            cd ~/docker
+            cd ~/docker/btc2-api
             tar -xzf deploy.tar.gz
             rm deploy.tar.gz
-            echo "Using PORT: $PORT"
             docker build -t btc2api .
             docker compose up -d
