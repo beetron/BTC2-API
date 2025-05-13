@@ -2,7 +2,7 @@ services:
   api:
     image: btc2api
     ports:
-      - "${PORT}:${PORT}"
+      - "4431:${PORT}"
     volumes:
       - profileImage:/src/users/profileImage
     environment:
