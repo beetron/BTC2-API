@@ -14,10 +14,10 @@ jobs:
           host: ${{ secrets.SERVER_HOSTNAME }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "*"
-          target: "~/docker/btc2_API"
+          source: "."
+          target: "~/docker"
           overwrite: true
-          strip_components: 1 # Added this to prevent nesting
+          strip_components: 1
 
       - name: Deploy with Docker
         uses: appleboy/ssh-action@v1
@@ -36,6 +36,6 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           envs: PORT,NODE_ENV,MONGO_DB_URI,JWT_SECRET,FIREBASE_KEY,SSL_CERT,SSL_KEY,PRODUCTION_URL
           script: |
-            cd ~/docker/btc2_API
+            cd ~/docker
             docker build -t btc2api .
             docker compose up -d
