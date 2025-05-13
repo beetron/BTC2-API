@@ -8,44 +8,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create archive
+      - name: Install SSH key
         run: |
-          # Create archive from git
-          echo "Creating archive from repository..."
-          git archive -o deploy.tar.gz HEAD
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
 
-          # Verify archive
-          if [ ! -f deploy.tar.gz ]; then
-            echo "Archive creation failed"
-            exit 1
-          fi
+      - name: Deploy to server
+        run: |
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            . ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOSTNAME }}:~/docker/
 
-          # Show contents and size
-          echo "Archive contents:"
-          tar -tvf deploy.tar.gz
-          ls -la deploy.tar.gz
-
-      - name: Prepare target directory
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SERVER_HOSTNAME }}
-          username: ${{ secrets.SERVER_USERNAME }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            rm -rf ~/docker/deploy.tar.gz
-            echo "Target directory cleaned"
-
-      - name: Copy application files
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.SERVER_HOSTNAME }}
-          username: ${{ secrets.SERVER_USERNAME }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "deploy.tar.gz"
-          target: "~/docker"
-          debug: true
-
-      - name: Extract and Deploy
+      - name: Build and Deploy
         uses: appleboy/ssh-action@v1
         env:
           PORT: ${{ secrets.PORT }}
@@ -63,7 +39,5 @@ jobs:
           envs: PORT,NODE_ENV,MONGO_DB_URI,JWT_SECRET,FIREBASE_KEY,SSL_CERT,SSL_KEY,PRODUCTION_URL
           script: |
             cd ~/docker
-            tar -xzf deploy.tar.gz
-            rm deploy.tar.gz
             docker build -t btc2api .
             docker compose up -d
