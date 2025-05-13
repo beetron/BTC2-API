@@ -10,14 +10,20 @@ jobs:
 
       - name: Create tar file
         run: |
-          # List what will be included
-          echo "Files to be included:"
-          find . -type f -not -path '*/\.*' -not -path '*/node_modules/*'
-
-          # Create tar with specific exclusions
+          # Create tar with warning suppressions
           tar --exclude='.git' \
               --exclude='.github' \
+              --warning=no-file-changed \
+              --warning=no-file-removed \
+              --warning=no-file-shrank \
               -czf deploy.tar.gz .
+
+          # Check tar exit code
+          code=$?
+          if [ $code -ne 0 -a $code -ne 1 ]; then
+            echo "Fatal tar error: $code"
+            exit $code
+          fi
 
           # Verify tar contents
           echo "Tar contents:"
