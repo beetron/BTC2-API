@@ -1,0 +1,44 @@
+name: Deploy to Production
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Copy application files
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOSTNAME }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "*"
+          target: "~/docker/btc_API"
+          overwrite: true
+          strip_components: 1 # Added this to prevent nesting
+
+      - name: Deploy with Docker
+        uses: appleboy/ssh-action@v1
+        env:
+          PORT: ${{ secrets.PORT }}
+          NODE_ENV: production
+          MONGO_DB_URI: ${{ secrets.MONGO_DB_URI }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
+          SSL_CERT: ${{ secrets.SSL_CERT }}
+          SSL_KEY: ${{ secrets.SSL_KEY }}
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+        with:
+          host: ${{ secrets.SERVER_HOSTNAME }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          envs: PORT,NODE_ENV,MONGO_DB_URI,JWT_SECRET,FIREBASE_KEY,SSL_CERT,SSL_KEY,PRODUCTION_URL
+          script: |
+            cd ~/docker/btc_API
+            docker build -t btc2api .
+            docker compose up -d

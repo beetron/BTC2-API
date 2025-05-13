@@ -1,0 +1,21 @@
+services:
+  api:
+    image: btc2api
+    ports:
+      - "${PORT}:${PORT}"
+    volumes:
+      - profileImage:/src/users/profileImage
+    environment:
+      - PORT=${PORT}
+      - NODE_ENV=${NODE_ENV}
+      - MONGO_DB_URI=${MONGO_DB_URI}
+      - JWT_SECRET=${JWT_SECRET}
+      - FIREBASE_KEY=${FIREBASE_KEY}
+      - SSL_CERT=${SSL_CERT}
+      - SSL_KEY=${SSL_KEY}
+      - PRODUCTION_URL=${PRODUCTION_URL}
+    restart: unless-stopped
+
+volumes:
+  profileImage:
+    name: btc2api_profileImage
