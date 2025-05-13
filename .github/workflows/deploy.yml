@@ -14,14 +14,16 @@ jobs:
           host: ${{ secrets.SERVER_HOSTNAME }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          port: 22
           source: "."
           target: "~/docker"
-          strip_components: 0
-          overwrite: true
-          tar_tmp_path: "/tmp"
-          command_timeout: "5m"
+          timeout: "30s"
+          command_timeout: "2m"
           rm: true
+          overwrite: true
+          strip_components: 0
           debug: true
+          capture_stdout: true
 
       - name: Build and Deploy
         uses: appleboy/ssh-action@v1
