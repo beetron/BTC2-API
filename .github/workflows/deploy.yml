@@ -18,6 +18,9 @@ jobs:
           target: "~/docker"
           overwrite: true
           strip_components: 1
+          debug: true
+          command_timeout: "3m"
+          proxy_timeout: "3m"
 
       - name: Deploy with Docker
         uses: appleboy/ssh-action@v1
