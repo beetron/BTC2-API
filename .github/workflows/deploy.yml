@@ -8,17 +8,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify target directory
+      - name: Create tar file
+        run: |
+          tar -czf deploy.tar.gz .
+          ls -la deploy.tar.gz
+
+      - name: Prepare target directory
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_HOSTNAME }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            if [ ! -d "~/docker" ]; then
-              echo "Target directory does not exist!"
-              exit 1
-            fi
+            rm -rf ~/docker/deploy.tar.gz
+            echo "Target directory cleaned"
 
       - name: Copy application files
         uses: appleboy/scp-action@v1
@@ -26,14 +29,11 @@ jobs:
           host: ${{ secrets.SERVER_HOSTNAME }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "."
-          target: "~/docker/" # Added trailing slash
-          overwrite: true
-          strip_components: 1
+          source: "deploy.tar.gz"
+          target: "~/docker"
           debug: true
-          command_timeout: "3m"
 
-      - name: Deploy with Docker
+      - name: Extract and Deploy
         uses: appleboy/ssh-action@v1
         env:
           PORT: ${{ secrets.PORT }}
@@ -51,5 +51,7 @@ jobs:
           envs: PORT,NODE_ENV,MONGO_DB_URI,JWT_SECRET,FIREBASE_KEY,SSL_CERT,SSL_KEY,PRODUCTION_URL
           script: |
             cd ~/docker
+            tar -xzf deploy.tar.gz
+            rm deploy.tar.gz
             docker build -t btc2api .
             docker compose up -d
