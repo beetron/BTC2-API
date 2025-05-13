@@ -8,29 +8,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create tar file
+      - name: Create archive
         run: |
-          # List files to be included
-          echo "Files to be archived:"
-          find . -type f ! -path "*/\.*" ! -path "*/node_modules/*"
+          # Create archive from git
+          echo "Creating archive from repository..."
+          git archive -o deploy.tar.gz HEAD
 
-          tar --exclude='.git' \
-              --exclude='.github' \
-              --ignore-failed-read \
-              --warning=no-file-changed \
-              --warning=no-file-removed \
-              --warning=no-file-shrank \
-              -czf deploy.tar.gz . || true
-
-          # Verify archive was created
+          # Verify archive
           if [ ! -f deploy.tar.gz ]; then
-            echo "Failed to create archive"
+            echo "Archive creation failed"
             exit 1
           fi
 
-          # Show archive contents and size
+          # Show contents and size
           echo "Archive contents:"
-          tar -tvf deploy.tar.gz || true
+          tar -tvf deploy.tar.gz
           ls -la deploy.tar.gz
 
       - name: Prepare target directory
