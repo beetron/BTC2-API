@@ -8,21 +8,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Copy files to server
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.SERVER_HOSTNAME }}
-          username: ${{ secrets.SERVER_USERNAME }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: 22
-          source: "."
-          target: "~/docker"
-          rm: true
-          debug: true
-          overwrite: true
-          use_insecure_cipher: false
-          command_timeout: "5m"
-          strip_components: 0
+      - name: Setup SSH and transfer files
+        run: |
+          # Setup SSH key
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # Add host key checking exceptions
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+          # Create tar file (excluding .git and node_modules)
+          tar --exclude='.git' --exclude='node_modules' -czf deploy.tar.gz .
+
+          # Transfer file to server
+          scp -i ~/.ssh/deploy_key deploy.tar.gz ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOSTNAME }}:~/docker/
+
+          # Clean up local files
+          rm deploy.tar.gz
 
       - name: Build and Deploy
         uses: appleboy/ssh-action@v1
@@ -42,5 +45,7 @@ jobs:
           envs: PORT,NODE_ENV,MONGO_DB_URI,JWT_SECRET,FIREBASE_KEY,SSL_CERT,SSL_KEY,PRODUCTION_URL
           script: |
             cd ~/docker
+            tar -xzf deploy.tar.gz
+            rm deploy.tar.gz
             docker build -t btc2api .
             docker compose up -d
