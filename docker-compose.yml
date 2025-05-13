@@ -11,8 +11,10 @@ services:
       - MONGO_DB_URI=${MONGO_DB_URI}
       - JWT_SECRET=${JWT_SECRET}
       - FIREBASE_KEY=${FIREBASE_KEY}
-      - SSL_CERT=${SSL_CERT}
-      - SSL_KEY=${SSL_KEY}
+      - |
+        SSL_CERT=${SSL_CERT}
+      - |
+        SSL_KEY=${SSL_KEY}
       - PRODUCTION_URL=${PRODUCTION_URL}
     restart: unless-stopped
 
