@@ -1,12 +1,12 @@
 FROM node:24-slim
 
-WORKDIR /src
+WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
 # Prep empty directories for docker volume mounts
-RUN mkdir -p ./src/users/profileImage
+RUN mkdir -p /app/src/users/profileImage
 
 # Install dependencies
 RUN npm install --production
