@@ -8,6 +8,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Verify target directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOSTNAME }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            if [ ! -d "~/docker" ]; then
+              echo "Target directory does not exist!"
+              exit 1
+            fi
+
       - name: Copy application files
         uses: appleboy/scp-action@v1
         with:
@@ -15,15 +27,11 @@ jobs:
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           source: "."
-          target: "~/docker"
+          target: "~/docker/" # Added trailing slash
           overwrite: true
           strip_components: 1
           debug: true
           command_timeout: "3m"
-          proxy_timeout: "3m"
-          tar_tmp_path: "/tmp"
-          tar_exec: "tar"
-          use_insecure_cipher: false
 
       - name: Deploy with Docker
         uses: appleboy/ssh-action@v1
