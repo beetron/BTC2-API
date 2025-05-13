@@ -21,6 +21,9 @@ jobs:
           debug: true
           command_timeout: "3m"
           proxy_timeout: "3m"
+          tar_tmp_path: "/tmp"
+          tar_exec: "tar"
+          use_insecure_cipher: false
 
       - name: Deploy with Docker
         uses: appleboy/ssh-action@v1
