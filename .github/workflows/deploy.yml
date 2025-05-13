@@ -19,6 +19,7 @@ jobs:
           echo "StrictHostKeyChecking no" >> ~/.ssh/config
 
           # Create tar file (excluding .git and node_modules)
+          touch deploy.tar.gz
           tar --exclude='.git' --exclude='node_modules' -czf deploy.tar.gz .
 
           # Transfer file to server
