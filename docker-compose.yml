@@ -10,7 +10,8 @@ services:
       - NODE_ENV=${NODE_ENV}
       - MONGO_DB_URI=${MONGO_DB_URI}
       - JWT_SECRET=${JWT_SECRET}
-      - FIREBASE_KEY=${FIREBASE_KEY}
+      - |
+        FIREBASE_KEY=${FIREBASE_KEY}
       - |
         SSL_CERT=${SSL_CERT}
       - |
