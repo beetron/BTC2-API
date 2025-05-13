@@ -10,13 +10,18 @@ jobs:
 
       - name: Create tar file
         run: |
-          # Create a clean directory for tar
-          mkdir -p /tmp/deploy
-          cp -r . /tmp/deploy/
-          cd /tmp/deploy
-          tar -czf deploy.tar.gz .
-          mv deploy.tar.gz ${GITHUB_WORKSPACE}/
-          cd ${GITHUB_WORKSPACE}
+          # List what will be included
+          echo "Files to be included:"
+          find . -type f -not -path '*/\.*' -not -path '*/node_modules/*'
+
+          # Create tar with specific exclusions
+          tar --exclude='.git' \
+              --exclude='.github' \
+              -czf deploy.tar.gz .
+
+          # Verify tar contents
+          echo "Tar contents:"
+          tar -tvf deploy.tar.gz
           ls -la deploy.tar.gz
 
       - name: Prepare target directory
