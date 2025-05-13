@@ -48,5 +48,6 @@ jobs:
             cd ~/docker
             tar -xzf deploy.tar.gz
             rm deploy.tar.gz
+            echo "Using PORT: $PORT"
             docker build -t btc2api .
             docker compose up -d
