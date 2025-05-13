@@ -15,7 +15,7 @@ jobs:
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           source: "*"
-          target: "~/docker/btc_API"
+          target: "~/docker/btc2_API"
           overwrite: true
           strip_components: 1 # Added this to prevent nesting
 
@@ -36,6 +36,6 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           envs: PORT,NODE_ENV,MONGO_DB_URI,JWT_SECRET,FIREBASE_KEY,SSL_CERT,SSL_KEY,PRODUCTION_URL
           script: |
-            cd ~/docker/btc_API
+            cd ~/docker/btc2_API
             docker build -t btc2api .
             docker compose up -d
