@@ -10,7 +10,13 @@ jobs:
 
       - name: Create tar file
         run: |
+          # Create a clean directory for tar
+          mkdir -p /tmp/deploy
+          cp -r . /tmp/deploy/
+          cd /tmp/deploy
           tar -czf deploy.tar.gz .
+          mv deploy.tar.gz ${GITHUB_WORKSPACE}/
+          cd ${GITHUB_WORKSPACE}
           ls -la deploy.tar.gz
 
       - name: Prepare target directory
