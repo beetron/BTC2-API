@@ -16,6 +16,10 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           source: "."
           target: "~/docker"
+          strip_components: 0
+          overwrite: true
+          tar_tmp_path: "/tmp"
+          command_timeout: "5m"
           rm: true
           debug: true
 
