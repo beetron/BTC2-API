@@ -4,7 +4,7 @@ services:
     ports:
       - "4431:${PORT}"
     volumes:
-      - profileImage:/src/users/profileImage
+      - profileImage:/app/src/users/profileImage
     environment:
       - PORT=${PORT}
       - NODE_ENV=${NODE_ENV}
