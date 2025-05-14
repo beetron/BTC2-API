@@ -34,7 +34,7 @@ const userSchema = new mongoose.Schema(
     },
     nickname: {
       type: String,
-      minLength: 6,
+      minLength: 1,
       maxLength: 20,
       default: function () {
         return this.username;
