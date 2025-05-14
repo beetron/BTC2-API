@@ -3,6 +3,11 @@ import UserConversation from "../models/userConversation.model.js";
 import fs from "fs-extra";
 import path from "path";
 import bcrypt from "bcryptjs";
+import { fileURLToPath } from "url";
+
+// Used for getting the curent directory path regardless of environment
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /////////////////////////////////////////////
 // Get user friend list
@@ -369,16 +374,15 @@ export const updateUniqueId = async (req, res) => {
 /////////////////////////////////////////////
 export const updateProfileImage = async (req, res) => {
   try {
-    // Get user data
     const user = req.user;
-    // New profile image data from request body
     const file = req.file;
 
     if (file) {
       // Check and remove existing profile image if it exists
       if (user.profileImage) {
         const existingImagePath = path.join(
-          "users/profileImage",
+          __dirname,
+          "../users/profileImage",
           user.profileImage
         );
         try {
@@ -402,6 +406,41 @@ export const updateProfileImage = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+// export const updateProfileImage = async (req, res) => {
+//   try {
+//     // Get user data
+//     const user = req.user;
+//     // New profile image data from request body
+//     const file = req.file;
+
+//     if (file) {
+//       // Check and remove existing profile image if it exists
+//       if (user.profileImage) {
+//         const existingImagePath = path.join(
+//           "users/profileImage",
+//           user.profileImage
+//         );
+//         try {
+//           await fs.remove(existingImagePath);
+//         } catch (error) {
+//           console.log("Error removing existing profile image: ", error);
+//         }
+//       }
+
+//       // Update user's profile image link in database
+//       user.profileImage = file.filename;
+//       await user.save();
+
+//       return res.status(200).json({
+//         message: "Profile image updated",
+//         profileImage: file.filename,
+//       });
+//     }
+//   } catch (error) {
+//     console.log("Error in updateProfileImage controller: ", error.message);
+//     return res.status(500).json({ error: "Internal server error" });
+//   }
+// };
 
 /////////////////////////////////////////////
 // Register or update FCM token
