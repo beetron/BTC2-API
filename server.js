@@ -10,14 +10,15 @@ import connectToMongoDB from "./src/db/connectToMongoDB.js";
 import { app, server } from "./src/socket/socket.js";
 
 const PORT = process.env.PORT;
+const API_VERSION = process.env.API_VERSION;
 
 // Middleware to parse JSON bodies
 app.use(express.json());
 app.use(cookieParser());
 
-app.use("/auth", authRoutes);
-app.use("/messages", messageRoutes);
-app.use("/users", userRoutes);
+app.use(`${API_VERSION}/auth`, authRoutes);
+app.use(`${API_VERSION}/messages`, messageRoutes);
+app.use(`${API_VERSION}/users`, userRoutes);
 
 server.listen(PORT, () => {
   connectToMongoDB();

@@ -23,8 +23,8 @@ jobs:
           tar --exclude='.git' --exclude='node_modules' -czf deploy.tar.gz .
 
           # Create target directory and transfer file
-          ssh -i ~/.ssh/deploy_key ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOSTNAME }} 'mkdir -p ~/docker/btc2-api-v1'
-          scp -i ~/.ssh/deploy_key deploy.tar.gz ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOSTNAME }}:~/docker/btc2-api-v1/
+          ssh -i ~/.ssh/deploy_key ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOSTNAME }} "mkdir -p ~/docker/btc2-api-${{ secrets.API_VERSION }}"
+          scp -i ~/.ssh/deploy_key deploy.tar.gz ${{ secrets.SERVER_USERNAME }}@${{ secrets.SERVER_HOSTNAME }}:~/docker/btc2-api-${{ secrets.API_VERSION }}/
 
           # Clean up local files
           rm deploy.tar.gz
@@ -32,6 +32,7 @@ jobs:
       - name: Build and Deploy
         uses: appleboy/ssh-action@v1
         env:
+          API_VERSION: ${{ secrets.API_VERSION }}
           PORT: ${{ secrets.PORT }}
           NODE_ENV: ${{ secrets.NODE_ENV }}
           MONGO_DB_URI: ${{ secrets.MONGO_DB_URI }}
@@ -39,12 +40,11 @@ jobs:
           FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
           SSL_CERT: ${{ secrets.SSL_CERT }}
           SSL_KEY: ${{ secrets.SSL_KEY }}
-          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
         with:
           host: ${{ secrets.SERVER_HOSTNAME }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          envs: PORT,NODE_ENV,MONGO_DB_URI,JWT_SECRET,FIREBASE_KEY,SSL_CERT,SSL_KEY,PRODUCTION_URL
+          envs: API_VERSION,PORT,NODE_ENV,MONGO_DB_URI,JWT_SECRET,FIREBASE_KEY,SSL_CERT,SSL_KEY
           script: |
             cd ~/docker/btc2-api-v1
             tar -xzf deploy.tar.gz

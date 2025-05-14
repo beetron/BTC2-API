@@ -6,6 +6,7 @@ services:
     volumes:
       - profileImage:/app/src/users/profileImage
     environment:
+      - API_VERSION=${API_VERSION}
       - PORT=${PORT}
       - NODE_ENV=${NODE_ENV}
       - MONGO_DB_URI=${MONGO_DB_URI}
