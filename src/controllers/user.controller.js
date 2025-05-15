@@ -426,13 +426,11 @@ export const registerFcmToken = async (req, res) => {
     const tokenIndex = user.fcmTokens.findIndex((t) => t.token === token);
 
     if (tokenIndex !== -1) {
-      // Update existing token with new device info
-      user.fcmTokens[tokenIndex].device =
-        device || user.fcmTokens[tokenIndex].device;
-
-      // Force modification to trigger updatedAt timestamp change
-      // user.markModified("fcmTokens");
-      user.markModified(`fcmTokens.${tokenIndex}`);
+      // Update existing token to update timestamp
+      user.fcmTokens[tokenIndex] = {
+        token,
+        device: device || user.fcmTokens[tokenIndex].device,
+      };
     } else {
       // Add new token
       user.fcmTokens.push({ token, device: device || "unknown" });
