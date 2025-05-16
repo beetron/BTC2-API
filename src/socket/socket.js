@@ -32,6 +32,10 @@ const server = https.createServer(
 
 const io = new Server(server, {
   path: `/${API_VERSION}/socket.io`,
+  pingTimeout: 60000, // 60 seconds without a pong packet
+  pingInterval: 25000, // Send a ping every 25 seconds
+  transports: ["websocket", "polling"],
+  allowUpgrades: true,
 });
 
 // Use if you will access API via browser
