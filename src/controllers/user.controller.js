@@ -131,7 +131,7 @@ export const addFriendRequest = async (req, res) => {
     requestReceiver.friendRequests.push(user._id);
     await requestReceiver.save();
 
-    res.status(201).json({ message: "Friend request sent" });
+    res.status(200).json({ message: "Friend request sent" });
   } catch (error) {
     console.log("Error in addFriendRequeset controller: ", error.message);
     res.status(500).json({ error: "Internal server error" });
