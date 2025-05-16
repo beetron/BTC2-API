@@ -30,7 +30,7 @@ const server = https.createServer(
 );
 
 const io = new Server(server, {
-  path: "/socket.io",
+  path: `/${API_VERSION}/socket.io`,
 });
 
 // Use if you will access API via browser
