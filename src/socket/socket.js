@@ -29,7 +29,9 @@ const server = https.createServer(
   app
 );
 
-const io = new Server(server);
+const io = new Server(server, {
+  path: "/socket.io",
+});
 
 // Use if you will access API via browser
 //
