@@ -7,6 +7,7 @@ import express from "express";
 import fs from "fs";
 const app = express();
 
+const API_VERSION = process.env.API_VERSION;
 const appEnvironment = process.env.NODE_ENV;
 let sslKey;
 let sslCert;
