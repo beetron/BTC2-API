@@ -7,7 +7,7 @@ This API was built for an invite only IOS Mobile Chat app. Signup requires an ex
 
 ## Table of Contents
 
-- [Update Plans](#update-plans)
+- [Features](#features)
 - [Setup](#setup)
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
@@ -20,15 +20,28 @@ This API was built for an invite only IOS Mobile Chat app. Signup requires an ex
   - [Push Notifications](#push-notifications)
 - [API Routes](#api-routes)
 - [Deployment](#deployment)
-- [License](#license)
 
-## Update Plans
+## Features
+
+<div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
+
+#### Current Features
+
+- Signup, Login, Logout
+- Update nickname/unique ID/profile image
+- Change password
+- Send message, get messages
+- Check unread messages count
+- Get friend list, send friend requests, approve/reject requests, get pending friend requests
+
+#### Update Plans
 
 - Group chat support
 - File sharing via messages
 - Block users
 - Email registration
 - Forgot password function
+</div>
 
 ## Setup
 
@@ -157,7 +170,7 @@ path: `/${API_VERSION}/socket.io`
 
 </div>
 
-### API Routes
+## API Routes
 
 <div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
 
@@ -190,7 +203,7 @@ DELETE /{API_VERSION}/messages/delete/:id  - Delete messages
 
 </div>
 
-### Deployment
+## Deployment
 
 <div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
 
