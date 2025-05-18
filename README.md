@@ -1,5 +1,15 @@
 # BTC2 API
 
+[![Node.js](https://img.shields.io/badge/Node.js-24.x-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-4.x-47A248?style=flat-square&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
+[![Firebase](https://img.shields.io/badge/Firebase-Cloud_Messaging-FFCA28?style=flat-square&logo=firebase&logoColor=black)](https://firebase.google.com/)
+[![JWT](https://img.shields.io/badge/JWT-Auth-000000?style=flat-square&logo=json-web-tokens&logoColor=white)](https://jwt.io/)
+[![Socket.io](https://img.shields.io/badge/Socket.io-v4-010101?style=flat-square&logo=socket.io&logoColor=white)](https://socket.io/)
+
+[![Linux](https://img.shields.io/badge/Linux-Server-FCC624?style=flat-square&logo=linux&logoColor=black)](https://www.linux.org/)
+[![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI/CD-2088FF?style=flat-square&logo=github-actions&logoColor=white)](https://github.com/features/actions)
+[![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
+
 A secure WebSocket-enabled REST API for real-time messaging with push notifications support, featuring CI/CD pipeline integration.<br/>
 CI/CD setup: Github secrets/actions -> Remote Linux server running docker<br/>
 <br/>
@@ -82,8 +92,16 @@ DEV_SSL_CERT_PATH=[path-to-cert.pem]
 SSL_KEY=[base64-encoded-key]
 SSL_CERT=[base64-encoded-cert]
 
-# Firebase Admin SDK
+# Firebase account key setup in /src/firebase/firebaseAdmin.js
 FIREBASE_KEY=[firebase-service-account-json]
+```
+
+#### Profile Image Store Folder
+
+- Create folder to store user profile images
+
+```bash
+/src/users/profileImage
 ```
 
 ### SSL Configuration
@@ -149,11 +167,6 @@ path: `/${API_VERSION}/socket.io`
 - Multiple device support
 - Automatic token cleanup
 - Badge count management for iOS
-
-```bash
-# Setup your serviceAccountKey.json here
-/src/firebase/firebaseAdmin.js
-```
 
 ## API Routes
 
