@@ -23,8 +23,6 @@ This API was built for an invite only IOS Mobile Chat app. Signup requires an ex
 
 ## Features
 
-<div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
-
 #### Current Features
 
 - Signup, Login, Logout
@@ -41,7 +39,6 @@ This API was built for an invite only IOS Mobile Chat app. Signup requires an ex
 - Block users
 - Email registration
 - Forgot password function
-</div>
 
 ## Setup
 
@@ -98,7 +95,6 @@ FIREBASE_KEY=[firebase-service-account-json]
 
 ### Database Models
 
-<div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
 <details open>
 <summary><strong>User Model</strong></summary>
 
@@ -123,11 +119,8 @@ FIREBASE_KEY=[firebase-service-account-json]
 - Tracks unread message counts
 - Supports message deletion with safety checks
 </details>
-</div>
 
 ### Authentication
-
-<div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
 
 - JWT-based authentication
 - Protected routes using middleware
@@ -135,8 +128,6 @@ FIREBASE_KEY=[firebase-service-account-json]
 </div>
 
 ### WebSocket Integration
-
-<div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
 
 #### Socket.IO implementation for real-time features:
 
@@ -151,11 +142,7 @@ FIREBASE_KEY=[firebase-service-account-json]
 path: `/${API_VERSION}/socket.io`
 ```
 
-</div>
-
 ### Push Notifications
-
-<div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
 
 #### Firebase Cloud Messaging (FCM) integration:
 
@@ -168,11 +155,7 @@ path: `/${API_VERSION}/socket.io`
 /src/firebase/firebaseAdmin.js
 ```
 
-</div>
-
 ## API Routes
-
-<div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
 
 #### Authentication Routes
 
@@ -201,11 +184,7 @@ GET    /{API_VERSION}/messages/get/:id     - Get conversation history
 DELETE /{API_VERSION}/messages/delete/:id  - Delete messages
 ```
 
-</div>
-
 ## Deployment
-
-<div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-bottom: 10px;">
 
 This project includes Docker support for easy deployment (docker compose)
 
@@ -222,5 +201,3 @@ docker-compose up -d
 ```
 
 The included GitHub Actions workflow handles automated deployment to production servers.
-
-</div>
