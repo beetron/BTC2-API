@@ -50,4 +50,9 @@ jobs:
             tar -xzf deploy.tar.gz
             rm deploy.tar.gz
             docker build -t btc2api:${{ secrets.API_VERSION }} .
-            docker compose up -d
+
+            docker compose down
+            docker compose up -d --force-recreate
+
+            # Optional: Remove any unused images to save disk space
+            docker image prune -f
