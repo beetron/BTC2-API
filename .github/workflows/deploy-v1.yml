@@ -46,6 +46,16 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           envs: API_VERSION,PORT,NODE_ENV,MONGO_DB_URI,JWT_SECRET,FIREBASE_KEY,SSL_CERT,SSL_KEY
           script: |
+            # Stop all containers with btc2api image
+            echo "Stopping any existing btc2api containers..."
+            running_containers=$(docker ps -q --filter "ancestor=btc2api")
+            if [ ! -z "$running_containers" ]; then
+              echo "Found running containers: $running_containers"
+              docker stop $running_containers
+            else
+              echo "No running containers found."
+            fi
+
             cd ~/docker/btc2-api-${{ secrets.API_VERSION }}
             tar -xzf deploy.tar.gz
             rm deploy.tar.gz
