@@ -55,4 +55,4 @@ jobs:
             docker compose up -d --force-recreate
 
             # Optional: Remove any unused images to save disk space
-            docker image prune -f
+            # docker image prune -f

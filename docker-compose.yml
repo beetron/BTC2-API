@@ -1,6 +1,6 @@
 services:
   api:
-    image: btc2api:1.0.0
+    image: btc2api:${API_VERSION}
     ports:
       - "4431:${PORT}"
     volumes:
@@ -17,7 +17,13 @@ services:
         SSL_CERT=${SSL_CERT}
       - |
         SSL_KEY=${SSL_KEY}
-      - PRODUCTION_URL=${PRODUCTION_URL}
+      #- PRODUCTION_URL=${PRODUCTION_URL}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "${SERVER_HOSTNAME}/${API_VERSION}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
 
 volumes:

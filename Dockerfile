@@ -1,6 +1,9 @@
-FROM node:24-slim
+FROM node:24.1.0-alpine
 
 WORKDIR /app
+
+# Install curl for docker healthchecks
+RUN apk add --no-cache curl
 
 # Copy package files
 COPY package*.json ./

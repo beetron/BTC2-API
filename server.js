@@ -16,6 +16,11 @@ const API_VERSION = process.env.API_VERSION;
 app.use(express.json());
 app.use(cookieParser());
 
+// Simple health check endpoint
+app.get(`/${API_VERSION}/health`, (req, res) => {
+  res.status(200).send("OK");
+});
+
 app.use(`/${API_VERSION}/auth`, authRoutes);
 app.use(`/${API_VERSION}/messages`, messageRoutes);
 app.use(`/${API_VERSION}/users`, userRoutes);
