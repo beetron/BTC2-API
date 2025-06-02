@@ -17,14 +17,14 @@ services:
         SSL_CERT=${SSL_CERT}
       - |
         SSL_KEY=${SSL_KEY}
-      #- PRODUCTION_URL=${PRODUCTION_URL}
     healthcheck:
-      test: ["CMD", "curl", "-f", "${SERVER_HOSTNAME}/${API_VERSION}/health"]
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:443/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    restart: unless-stopped
+    # restart commented out due to github secret/actions dependencies
+    #restart: unless-stopped
 
 volumes:
   profileImage:

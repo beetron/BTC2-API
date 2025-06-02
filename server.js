@@ -16,8 +16,8 @@ const API_VERSION = process.env.API_VERSION;
 app.use(express.json());
 app.use(cookieParser());
 
-// Simple health check endpoint
-app.get(`/${API_VERSION}/health`, (req, res) => {
+// Simple health check endpoint without versioning
+app.get("/health", (req, res) => {
   res.status(200).send("OK");
 });
 
