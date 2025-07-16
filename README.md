@@ -35,6 +35,8 @@ This API was built for an invite only IOS Mobile Chat app. Signup requires an ex
 
 #### Current Features
 
+test
+
 - Signup, Login, Logout
 - Update nickname/unique ID/profile image
 - Change password
