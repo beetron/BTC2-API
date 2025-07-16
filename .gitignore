@@ -3,6 +3,8 @@
 
 .env
 
+.github/*
+
 # Firebase service account details
 src/firebase/serviceAccountKey.json
 
