@@ -27,6 +27,10 @@ const userSchema = new mongoose.Schema(
         return this.username;
       },
     },
+    email: {
+      type: String,
+      unique: true,
+    },
     password: {
       type: String,
       required: true,

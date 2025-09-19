@@ -1,4 +1,4 @@
-# BTC2 API
+# BTC2 API (v1.2.0)
 
 [![Node.js](https://img.shields.io/badge/Node.js-24.x-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-4.x-47A248?style=flat-square&logo=mongodb&logoColor=white)](https://www.mongodb.com/)

@@ -6,7 +6,14 @@ import generateToken from "../utility/generateToken.js";
 // (signup assigns username as the default uniqueId)
 export const signup = async (req, res) => {
   try {
-    const { username, password, uniqueId } = req.body;
+    const { username, password, email, uniqueId } = req.body;
+
+    // Check if friend's uniqueId exists
+    const friend = await User.findOne({ uniqueId });
+
+    if (!friend) {
+      return res.status(400).json({ error: "Friend's Unique ID incorrect" });
+    }
 
     // Convert username to lowercase
     const usernameLowerCase = username.toLowerCase();
@@ -19,21 +26,21 @@ export const signup = async (req, res) => {
       return res.status(400).json({ error: "Username is taken" });
     }
 
-    // Check if friend's uniqueId exists
-    const friend = await User.findOne({ uniqueId });
-
-    if (!friend) {
-      return res.status(400).json({ error: "Friend's Unique ID incorrect" });
+    // Check if email address is not in use
+    const emailInUse = await User.findOne({ email });
+    if (emailInUse) {
+      return res.status(400).json({ error: "Email address is already in use" });
     }
 
     // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Friend that shared uniqueId is added to friendList
+    // New user object with existing friend added to friendList
     const newUser = new User({
       username: usernameLowerCase,
       password: hashedPassword,
+      email: email,
       profileImage: "",
       friendList: [friend._id],
     });
@@ -52,6 +59,7 @@ export const signup = async (req, res) => {
         _id: newUser._id,
         nickname: newUser.nickname,
         uniqueId: newUser.uniqueId,
+        email: newUser.email,
         profileImage: newUser.profileImage,
         token,
       });
