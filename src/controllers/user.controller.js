@@ -408,6 +408,36 @@ export const updateProfileImage = async (req, res) => {
 };
 
 /////////////////////////////////////////////
+// Update email
+/////////////////////////////////////////////
+export const updateEmail = async (req, res) => {
+  // Get user data
+  const user = req.user;
+
+  // Retrieve email from request params
+  const { email } = req.params;
+
+  try {
+    // Check if email is already taken
+    const emailExists = await User.findOne({
+      email,
+      _id: { $ne: user._id },
+    });
+    if (emailExists) {
+      return res.status(400).json({ error: "Email already taken" });
+    }
+
+    user.email = email;
+    await user.save();
+
+    return res.status(200).json({ message: "Email updated" });
+  } catch (error) {
+    console.log("Error in updateEmail controller: ", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+/////////////////////////////////////////////
 // Register or update FCM token
 /////////////////////////////////////////////
 export const registerFcmToken = async (req, res) => {
