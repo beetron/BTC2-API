@@ -57,7 +57,7 @@ router.put(
   resizeImage,
   updateProfileImage
 );
-router.put("/updateemail/:email", protectRoute, updateEmail);
+router.put("/updateemail", protectRoute, updateEmail);
 router.put("/fcm/register", protectRoute, registerFcmToken);
 router.delete("/fcm/token", protectRoute, deleteFcmToken);
 

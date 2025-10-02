@@ -414,8 +414,8 @@ export const updateEmail = async (req, res) => {
   // Get user data
   const user = req.user;
 
-  // Retrieve email from request params
-  const { email } = req.params;
+  // Retrieve email from request body
+  const { email } = req.body;
 
   try {
     // Check if email is already taken

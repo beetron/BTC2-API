@@ -26,6 +26,11 @@ export const signup = async (req, res) => {
       return res.status(400).json({ error: "Username is taken" });
     }
 
+    // Check if email address is not blank
+    if (!email || email.trim() === "") {
+      return res.status(400).json({ error: "Email address is required" });
+    }
+
     // Check if email address is not in use
     const emailInUse = await User.findOne({ email });
     if (emailInUse) {
