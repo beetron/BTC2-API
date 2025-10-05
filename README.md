@@ -36,8 +36,9 @@ This API was built for an invite only IOS Mobile Chat app. Signup requires an ex
 #### Current Features
 
 - Signup, Login, Logout
+- Forgot username, Forgot password
 - Update nickname/unique ID/profile image
-- Change password
+- Change password, email
 - Send message, get messages
 - Check unread messages count
 - Get friend list, send friend requests, approve/reject requests, get pending friend requests
