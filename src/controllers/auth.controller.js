@@ -1,9 +1,11 @@
 import bcrypt from "bcryptjs";
 import User from "../models/user.model.js";
 import generateToken from "../utility/generateToken.js";
+import { sendEmail } from "../utility/sendEmail.js";
 
-// Signup
-// (signup assigns username as the default uniqueId)
+/////////////////////////////////////////////
+// Signup (signup assigns username as the default uniqueId)
+/////////////////////////////////////////////
 export const signup = async (req, res) => {
   try {
     const { username, password, email, uniqueId } = req.body;
@@ -75,7 +77,9 @@ export const signup = async (req, res) => {
   }
 };
 
+/////////////////////////////////////////////
 // Login
+/////////////////////////////////////////////
 export const login = async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -121,5 +125,35 @@ export const logout = (req, res) => {
   } catch (error) {
     console.log("Error logging out", error.message);
     res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+/////////////////////////////////////////////
+// Forgot username
+/////////////////////////////////////////////
+export const forgotUsername = async (req, res) => {
+  // Retrieve email from request body
+  const { email } = req.body;
+
+  try {
+    // Find user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ error: "Email not found" });
+    }
+
+    // Send username to user's email
+    await sendEmail({
+      to: email,
+      subject: "BTC2 - Username Recovery",
+      text: `Your username is: ${user.username}\n\nIf you did not request this email, someone may be trying to access your account.`,
+    });
+
+    return res.status(200).json({ message: "Username sent to email" });
+  } catch (error) {
+    console.log("Error in forgotUsername controller: ", error.message);
+    res
+      .status(500)
+      .json({ error: "Internal server error, please try again later" });
   }
 };
