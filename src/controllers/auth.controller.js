@@ -157,3 +157,47 @@ export const forgotUsername = async (req, res) => {
       .json({ error: "Internal server error, please try again later" });
   }
 };
+
+/////////////////////////////////////////////
+// Forgot password
+/////////////////////////////////////////////
+export const forgotPassword = async (req, res) => {
+  const { username, email } = req.body;
+
+  try {
+    // Convert username to lowercase
+    const usernameLowerCase = username.toLowerCase();
+
+    // Find user by username and email
+    const user = await User.findOne({ username: usernameLowerCase, email });
+    if (!user) {
+      return res.status(404).json({ error: "Username or email not found" });
+    }
+
+    // Generate a temporary password
+    const tempPassword = Math.random().toString(36).slice(-8);
+
+    // Hash the temporary password
+    const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+    // Update the user's password
+    user.password = hashedPassword;
+    await user.save();
+
+    // Send email with temporary password
+    await sendEmail({
+      to: email,
+      subject: "BTC2 - Password Reset",
+      text: `Your temporary password is: ${tempPassword}\n\nPlease log in and change your password.`,
+    });
+
+    return res
+      .status(200)
+      .json({ message: "Temporary password sent to email" });
+  } catch (error) {
+    console.log("Error in forgotPassword controller: ", error.message);
+    return res
+      .status(500)
+      .json({ error: "Internal server error, please try again later" });
+  }
+};
