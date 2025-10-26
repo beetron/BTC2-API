@@ -1,39 +1,33 @@
-# BTC2 API (v1.2.0)
+# 💬 BTC2 API
 
-[![Node.js](https://img.shields.io/badge/Node.js-24.x-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-4.x-47A248?style=flat-square&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
-[![Firebase](https://img.shields.io/badge/Firebase-Cloud_Messaging-FFCA28?style=flat-square&logo=firebase&logoColor=black)](https://firebase.google.com/)
-[![JWT](https://img.shields.io/badge/JWT-Auth-000000?style=flat-square&logo=json-web-tokens&logoColor=white)](https://jwt.io/)
-[![Socket.io](https://img.shields.io/badge/Socket.io-v4-010101?style=flat-square&logo=socket.io&logoColor=white)](https://socket.io/)
+A secure WebSocket-enabled REST API for real-time messaging with push notifications support.
 
-[![Linux](https://img.shields.io/badge/Linux-Server-FCC624?style=flat-square&logo=linux&logoColor=black)](https://www.linux.org/)
-[![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI/CD-2088FF?style=flat-square&logo=github-actions&logoColor=white)](https://github.com/features/actions)
-[![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
+## 🛠️ Tech Stack
 
-A secure WebSocket-enabled REST API for real-time messaging with push notifications support, featuring CI/CD pipeline integration.<br/>
-CI/CD setup: Github secrets/actions -> Remote Linux server running docker<br/>
-<br/>
-This API was built for an invite only IOS Mobile Chat app. Signup requires an existing member's unique ID.
+<div align="center">
 
-## Table of Contents
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
+![Express](https://img.shields.io/badge/Express-000000?style=for-the-badge&logo=express&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
+![Socket.IO](https://img.shields.io/badge/Socket.IO-010101?style=for-the-badge&logo=socket.io&logoColor=white)
+![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 
-- [Features](#features)
-- [Setup](#setup)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-  - [Environment Configuration](#environment-configuration)
-  - [SSL Configuration](#ssl-configuration)
-- [Architecture](#architecture)
-  - [Database Models](#database-models)
-  - [Authentication](#authentication)
-  - [WebSocket Integration](#websocket-integration)
-  - [Push Notifications](#push-notifications)
-- [API Routes](#api-routes)
-- [Deployment](#deployment)
+</div>
 
-## Features
+## 📑 Table of Contents
 
-#### Current Features
+- [✨ Features](#features)
+- [🚀 Setup](#setup)
+- [⚙️ Environment Configuration](#environment-configuration)
+- [🏗️ Architecture](#architecture)
+  - [🔐 Authentication](#authentication)
+  - [👤 User](#user)
+  - [💬 Messages](#messages)
+  - [🔌 Socket.IO](#socketio)
+- [🐳 Deployment](#deployment)
+
+## ✨ Features
 
 - Signup, Login, Logout
 - Forgot username, Forgot password
@@ -41,177 +35,114 @@ This API was built for an invite only IOS Mobile Chat app. Signup requires an ex
 - Change password, email
 - Send message, get messages
 - Check unread messages count
-- Get friend list, send friend requests, approve/reject requests, get pending friend requests
+- Get friend list, send/accept/reject/remove friend requests
+- Push notifications via Firebase
+- Real-time messaging via Socket.IO
 
-#### Update Plans
-
-- Group chat support
-- File sharing via messages
-- Block users
-- Email registration
-- Forgot password function
-
-## Setup
+## 🚀 Setup
 
 ### Prerequisites
 
 - Node.js 24+
 - MongoDB
 - Firebase Admin Account for push notification
-- SSL Certificate (for HTTPS)
 - Docker (optional)
 
 ### Installation
 
 1. Clone the repository:
+   ```bash
+   git clone https://github.com/beetron/btc2_API
+   cd btc2_api
+   ```
 
-```bash
-git clone https://github.com/beetron/btc2_API
-cd btc2_api
-```
-
+````
 2. Install dependencies:
-
-```bash
+   ```bash
 npm install
+````
+
+## ⚙️ Environment Configuration
+
+Set the following environment variables in your deployment environment or a `.env` file:
+
+```env
+# MongoDB connection
+MONGO_DB_URI=mongodb://username:password@example.com:27017/
+
+# JWT secret for authentication
+JWT_SECRET=key
+
+# Server port (default: 3000)
+PORT=3000
+
+# SMTP configuration for email sending
+SMTP_HOST=mail.example.com
+SMTP_USER=from@example.com
+SMTP_PASS="password"
+SMTP_FROM="BTC2-Notifications <from@example.com>"
+
+# Node environment
+NODE_ENV=production   # for production
+NODE_ENV=development  # for development
 ```
 
-### Environment Configuration
+## 🏗️ Architecture
 
-```bash
-API_VERSION=1.0.0
-PORT=443
-NODE_ENV=development
-MONGO_DB_URI=mongodb://[your-mongodb-uri]
-JWT_SECRET=[your-jwt-secret]
+- API version is tracked in `package.json` and used for docker image versioning.
+- Profile images are stored in `/src/users/profileImage` and handled via `multer` and `sharp`.
+- Real-time messaging is handled via Socket.IO.
+- Push notifications are sent via Firebase Cloud Messaging.
 
-# Development SSL paths
-DEV_SSL_KEY_PATH=[path-to-key.pem]
-DEV_SSL_CERT_PATH=[path-to-cert.pem]
+### 🔐 Authentication
 
-# Production SSL (Base64 encoded certificates)
-SSL_KEY=[base64-encoded-key]
-SSL_CERT=[base64-encoded-cert]
+- POST `/auth/signup` - Create new account
+- POST `/auth/login` - Login user
+- POST `/auth/logout` - Logout user
+- GET `/auth/forgotusername` - Forgot username
+- GET `/auth/forgotpassword` - Forgot password
 
-# Firebase account key setup in /src/firebase/firebaseAdmin.js
-FIREBASE_KEY=[firebase-service-account-json]
+### 👤 User
+
+- GET `/users/profileImage/:filename` - Get profile image
+- GET `/users/friendlist` - Get friend list
+- GET `/users/friendrequests` - Get friend requests
+- PUT `/users/addfriend/:uniqueId` - Send friend request
+- PUT `/users/acceptfriend/:uniqueId` - Accept friend request
+- PUT `/users/rejectfriend/:uniqueId` - Reject friend request
+- PUT `/users/removefriend/:uniqueId` - Remove friend
+- PUT `/users/changepassword` - Change password
+- PUT `/users/updatenickname/:nickname` - Update nickname
+- PUT `/users/updateuniqueid/:uniqueId` - Update unique ID
+- PUT `/users/updateprofileimage/` - Update profile image
+- PUT `/users/updateemail` - Update email
+- PUT `/users/fcm/register` - Register FCM token
+- DELETE `/users/fcm/token` - Delete FCM token
+
+### 💬 Messages
+
+- POST `/messages/send/:id` - Send message to user
+- GET `/messages/get/:id` - Get conversation history
+- DELETE `/messages/delete/:id` - Delete messages
+
+### 🔌 Socket.IO
+
+- Path: `/socket.io` (Versioning handled at infrastructure layer via Kubernetes/Nginx)
+- All communication is over HTTP (no SSL/HTTPS)
+
+## 🐳 Deployment
+
+- Docker and docker-compose supported.
+- Example:
+  ```bash
+  docker build -t btc2api:latest .
+  docker-compose up -d
+  ```
+
 ```
 
-#### Profile Image Store Folder
+---
 
-- Create folder to store user profile images
-
-```bash
-/src/users/profileImage
+**Note:**
+- No SSL/HTTPS is used; TLS/SSL is handled by nginx for production.
 ```
-
-### SSL Configuration
-
-- For development: Place your SSL key and certificate files in the root directory
-- For production: Base64 encode your SSL certificates and add them to environment variables
-
-## Architecture
-
-### Database Models
-
-<details open>
-<summary><strong>User Model</strong></summary>
-
-- Username/UniqueID system for user identification
-- Friend system with request/accept flow
-- FCM token management for push notifications
-- Profile image support
-</details>
-
-<details open>
-<summary><strong>Message Model</strong></summary>
-
-- Stores individual messages between users, and per user
-- Tracks sender and receiver
-- Timestamp-based message history
-</details>
-
-<details open>
-<summary><strong>UserConversation Model</strong></summary>
-
-- Manages conversation state between two users
-- Tracks unread message counts
-- Supports message deletion with safety checks
-</details>
-
-### Authentication
-
-- JWT-based authentication
-- Protected routes using middleware
-- Password hashing with bcrypt
-</div>
-
-### WebSocket Integration
-
-#### Socket.IO implementation for real-time features:
-
-- Connection management with user mapping
-- Real-time message delivery
-
-```bash
-# /src/socket/socket.io
-# socket.io uses path specified like so
-# link would be https://domain.com/${API_VERSION}/socket.io
-
-path: `/${API_VERSION}/socket.io`
-```
-
-### Push Notifications
-
-#### Firebase Cloud Messaging (FCM) integration:
-
-- Multiple device support
-- Automatic token cleanup
-- Badge count management for iOS
-
-## API Routes
-
-#### Authentication Routes
-
-```bash
-POST /{API_VERSION}/auth/signup - Create new account
-POST /{API_VERSION}/auth/login  - Login user
-POST /{API_VERSION}/auth/logout - Logout user
-```
-
-#### User Routes
-
-```bash
-GET  /{API_VERSION}/users/friendlist          - Get friend list
-GET  /{API_VERSION}/users/friendrequests      - Get friend requests
-PUT  /{API_VERSION}/users/addfriend/:uniqueId - Send friend request
-PUT  /{API_VERSION}/users/acceptfriend/:uniqueId - Accept friend request
-PUT  /{API_VERSION}/users/updateprofileimage  - Update profile picture
-PUT  /{API_VERSION}/users/fcm/register        - Register FCM token
-```
-
-#### Message Routes
-
-```bash
-POST   /{API_VERSION}/messages/send/:id    - Send message to user
-GET    /{API_VERSION}/messages/get/:id     - Get conversation history
-DELETE /{API_VERSION}/messages/delete/:id  - Delete messages
-```
-
-## Deployment
-
-This project includes Docker support for easy deployment (docker compose)
-
-1. Build the Docker image:
-
-```bash
-docker build -t btc2api:1.0.0 .
-```
-
-2. Run with docker-compose:
-
-```bash
-docker-compose up -d
-```
-
-The included GitHub Actions workflow handles automated deployment to production servers.
