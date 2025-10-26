@@ -20,7 +20,7 @@ const packageJson = JSON.parse(
 );
 const API_VERSION = packageJson.version;
 
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;
 
 // Middleware to parse JSON bodies
 app.use(express.json());
@@ -37,11 +37,13 @@ app.get("/config", (req, res) => {
   });
 });
 
-app.use(`/${API_VERSION}/auth`, authRoutes);
-app.use(`/${API_VERSION}/messages`, messageRoutes);
-app.use(`/${API_VERSION}/users`, userRoutes);
+console.log(`API Version: ${API_VERSION}`);
+
+app.use(`/auth`, authRoutes);
+app.use(`/messages`, messageRoutes);
+app.use(`/users`, userRoutes);
 
 server.listen(PORT, () => {
   connectToMongoDB();
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT} `);
 });

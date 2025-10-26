@@ -1,47 +1,14 @@
-import dotenv from "dotenv";
-dotenv.config();
-
 import { Server } from "socket.io";
-import https from "https";
 import express from "express";
-import fs from "fs";
+import http from "http";
+
 const app = express();
 
-const API_VERSION = process.env.API_VERSION;
-const appEnvironment = process.env.NODE_ENV;
-let sslKey;
-let sslCert;
-
-// Production will be injecting environment variables
-if (appEnvironment === "production") {
-  sslKey = process.env.SSL_KEY;
-  sslCert = process.env.SSL_CERT;
-} else {
-  // Development, physical file in root
-  sslKey = fs.readFileSync(process.env.DEV_SSL_KEY_PATH);
-  sslCert = fs.readFileSync(process.env.DEV_SSL_CERT_PATH);
-}
-
-const server = https.createServer(
-  {
-    key: sslKey,
-    cert: sslCert,
-  },
-  app
-);
+const server = http.createServer(app);
 
 const io = new Server(server, {
-  path: `/${API_VERSION}/socket.io`,
+  path: `/socket.io`,
 });
-
-// Use if you will access API via browser
-//
-// const io = new Server(server, {
-//   cors: {
-//     origin: [process.env.DEVELOPMENT_URL, process.env.PRODUCTION_URL],
-//     methods: ["GET", "POST"],
-//   },
-// });
 
 export const getReceiverSocketId = (receiverId) => {
   return userSocketMap[receiverId];
