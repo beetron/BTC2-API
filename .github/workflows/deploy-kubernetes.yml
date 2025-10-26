@@ -1,0 +1,49 @@
+name: Deploy to Kubernetes
+
+on: workflow_dispatch
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: SSH, Git Pull/Clone, Build Docker Image
+              uses: appleboy/ssh-action@v1
+              with:
+                  host: ${{ secrets.SERVER_HOSTNAME }}
+                  username: ${{ secrets.SERVER_USERNAME }}
+                  key: ${{ secrets.SERVER_SSH_KEY }}
+                  script: |
+                      # Step 1: SSH into remote server (already done via appleboy)
+                      echo "Connected to remote server"
+
+                      # Step 2: Navigate to docker_btc_api directory, create if doesn't exist
+                      mkdir -p ~/docker_btc_api
+                      cd ~/docker_btc_api
+
+                      # Step 3: Git pull or clone
+                      if [ -d "BTC2-API" ]; then
+                        echo "Repository exists, pulling latest changes..."
+                        cd BTC2-API
+                        git pull https://github.com/beetron/BTC2-API.git
+                      else
+                        echo "Repository does not exist, cloning..."
+                        git clone https://github.com/beetron/BTC2-API.git
+                        cd BTC2-API
+                      fi
+
+                      # Step 4: Extract version from package.json
+                      API_VERSION=$(cat package.json | grep '"version"' | head -1 | awk -F'"' '{print $4}')
+                      echo "API Version: $API_VERSION"
+
+                      # Step 5: Already in BTC2-API directory from git operations above
+                      echo "Current directory: $(pwd)"
+
+                      # Step 6: Build Docker image with version tag
+                      docker build -t btc-api:$API_VERSION .
+                      echo "Docker image built: btc-api:$API_VERSION"
+
+                      # Display built images
+                      docker images | grep btc-api
