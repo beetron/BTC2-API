@@ -41,9 +41,27 @@ jobs:
                       # Step 5: Already in BTC2-API directory from git operations above
                       echo "Current directory: $(pwd)"
 
-                      # Step 6: Build Docker image with version tag
-                      docker build -t btc-api:$API_VERSION .
+                      # Step 6: Build Docker image with version tag (no-cache to ensure latest code)
+                      docker build --no-cache -t btc-api:$API_VERSION .
                       echo "Docker image built: btc-api:$API_VERSION"
 
-                      # Display built images
-                      docker images | grep btc-api
+                      # Step 7: Update Kubernetes deployment YAML with new image version
+                      echo "Updating btc-api-deployment.yaml with image: btc-api:$API_VERSION"
+                      sed -i "s|image: btc-api:.*|image: btc-api:$API_VERSION|g" ~/.kube/yaml/btc-api-deployment.yaml
+                      echo "Updated deployment YAML:"
+                      cat ~/.kube/yaml/btc-api-deployment.yaml | grep "image:"
+
+                      # Step 8: Apply new deployment to Kubernetes
+                      echo "Applying new deployment configuration..."
+                      kubectl apply -f ~/.kube/yaml/btc-api-deployment.yaml
+                      echo "Deployment applied successfully"
+
+                      # Step 9: Clean up unused Docker images
+                      echo "Pruning unused Docker images..."
+                      docker image prune -f
+                      echo "Docker image cleanup completed"
+
+                      # Step 10: Verify deployment rolled out successfully
+                      echo "Verifying deployment status..."
+                      kubectl rollout status deployment/btc-api -n default --timeout=5m
+                      echo "Deployment verified and running!"
