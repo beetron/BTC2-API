@@ -1,4 +1,4 @@
-FROM node:24.1.0-alpine
+FROM node:24.10.0-alpine3.22
 
 WORKDIR /app
 
@@ -17,6 +17,6 @@ RUN npm install --production
 # Copy app source
 COPY . .
 
-EXPOSE 443
+EXPOSE 3000
 
 CMD ["npm", "start"]
