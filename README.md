@@ -84,6 +84,7 @@ SMTP_FROM="BTC2-Notifications <from@example.com>"
 
 # Node environment
 NODE_ENV=production   # for production
+FIREBASE_KEY # for production - fcm key json
 NODE_ENV=development  # for development
 ```
 
