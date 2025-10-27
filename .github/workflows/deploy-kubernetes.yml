@@ -2,66 +2,81 @@ name: Deploy to Kubernetes
 
 on: workflow_dispatch
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/btc-api
+  DEPLOYMENT_REPO: beetron/btro-kubernetes-yaml
+  DEPLOYMENT_FILE: deployment-service/btc-api-deployment.yaml
+
 jobs:
-    deploy:
-        runs-on: ubuntu-latest
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v4
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.version.outputs.api_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-            - name: SSH, Git Pull/Clone, Build Docker Image
-              uses: appleboy/ssh-action@v1
-              with:
-                  host: ${{ secrets.SERVER_HOSTNAME }}
-                  username: ${{ secrets.SERVER_USERNAME }}
-                  key: ${{ secrets.SERVER_SSH_KEY }}
-                  script: |
-                      # Step 1: SSH into remote server (already done via appleboy)
-                      echo "Connected to remote server"
+      - name: Extract version from package.json
+        id: version
+        run: |
+          API_VERSION=$(cat package.json | grep '"version"' | head -1 | awk -F'"' '{print $4}')
+          echo "api_version=$API_VERSION" >> $GITHUB_OUTPUT
+          echo "API Version: $API_VERSION"
 
-                      # Step 2: Navigate to docker_btc_api directory, create if doesn't exist
-                      mkdir -p ~/docker_btc_api
-                      cd ~/docker_btc_api
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-                      # Step 3: Git pull or clone
-                      if [ -d "BTC2-API" ]; then
-                        echo "Repository exists, pulling latest changes..."
-                        cd BTC2-API
-                        git pull https://github.com/beetron/BTC2-API.git
-                      else
-                        echo "Repository does not exist, cloning..."
-                        git clone https://github.com/beetron/BTC2-API.git
-                        cd BTC2-API
-                      fi
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-                      # Step 4: Extract version from package.json
-                      API_VERSION=$(cat package.json | grep '"version"' | head -1 | awk -F'"' '{print $4}')
-                      echo "API Version: $API_VERSION"
+      - name: Build and push Docker image to GHCR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.api_version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-                      # Step 5: Already in BTC2-API directory from git operations above
-                      echo "Current directory: $(pwd)"
+  update-deployment:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout private deployment repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.DEPLOYMENT_REPO }}
+          token: ${{ secrets.DEPLOYMENT_REPO_TOKEN }}
 
-                      # Step 6: Build Docker image with version tag (no-cache to ensure latest code)
-                      docker build --no-cache -t btc-api:$API_VERSION .
-                      echo "Docker image built: btc-api:$API_VERSION"
+      - name: Update image tag in deployment YAML
+        run: |
+          IMAGE_TAG=${{ needs.build-and-push.outputs.image_tag }}
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
+          echo "Updating image to: $IMAGE_NAME"
 
-                      # Step 7: Update Kubernetes deployment YAML with new image version
-                      echo "Updating btc-api-deployment.yaml with image: btc-api:$API_VERSION"
-                      sed -i "s|image: btc-api:.*|image: btc-api:$API_VERSION|g" ~/.kube/yaml/btc-api-deployment.yaml
-                      echo "Updated deployment YAML:"
-                      cat ~/.kube/yaml/btc-api-deployment.yaml | grep "image:"
+          # Use yq to update the image tag
+          yq eval ".spec.template.spec.containers[0].image = \"$IMAGE_NAME\"" -i ${{ env.DEPLOYMENT_FILE }}
 
-                      # Step 8: Apply new deployment to Kubernetes
-                      echo "Applying new deployment configuration..."
-                      kubectl apply -f ~/.kube/yaml/btc-api-deployment.yaml
-                      echo "Deployment applied successfully"
+          echo "Updated deployment YAML:"
+          cat ${{ env.DEPLOYMENT_FILE }} | grep "image:"
 
-                      # Step 9: Clean up unused Docker images
-                      echo "Pruning unused Docker images..."
-                      docker image prune -f
-                      echo "Docker image cleanup completed"
+      - name: Commit and push to deployment repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-                      # Step 10: Verify deployment rolled out successfully
-                      echo "Verifying deployment status..."
-                      kubectl rollout status deployment/btc-api -n default --timeout=5m
-                      echo "Deployment verified and running!"
+          git add ${{ env.DEPLOYMENT_FILE }}
+          git commit -m "chore: update btc-api image to ${{ needs.build-and-push.outputs.image_tag }}"
+          git push
