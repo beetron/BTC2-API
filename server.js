@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
+import cors from "cors";
 import cookieParser from "cookie-parser";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
@@ -22,7 +23,16 @@ const API_VERSION = packageJson.version;
 
 const PORT = process.env.PORT || 3000;
 
+// Configure CORS
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN?.split(",") || [],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
 // Middleware to parse JSON bodies
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
