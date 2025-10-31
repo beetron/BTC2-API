@@ -8,13 +8,19 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   path: `/socket.io`,
+  cors: {
+    origin: process.env.CORS_ORIGIN?.split(",") || [],
+    credentials: true,
+    methods: ["GET", "POST"],
+  },
 });
 
-export const getReceiverSocketId = (receiverId) => {
-  return userSocketMap[receiverId];
+// Get all socket IDs for a receiver (handles multiple devices)
+export const getReceiverSocketIds = (receiverId) => {
+  return userSocketMap[receiverId] || [];
 };
 
-// Map to store userId and socketId pair
+// Map to store userId and array of socketId pairs (supports multiple devices)
 const userSocketMap = {};
 
 io.on("connection", (socket) => {
@@ -24,7 +30,15 @@ io.on("connection", (socket) => {
   const userId = socket.handshake.query.userId;
 
   if (userId && userId !== "undefined") {
-    userSocketMap[userId] = socket.id;
+    // Initialize array if not exists
+    if (!userSocketMap[userId]) {
+      userSocketMap[userId] = [];
+    }
+    // Add this socket to the user's sockets (supports mobile, web, tablet, etc.)
+    userSocketMap[userId].push(socket.id);
+    console.log(
+      `User ${userId} connected. Total devices: ${userSocketMap[userId].length}`
+    );
   } else {
     console.log("Invalid userId:", userId);
   }
@@ -35,7 +49,17 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log("client has disconnected", socket.id);
     if (userId && userId !== "undefined") {
-      delete userSocketMap[userId];
+      // Remove only this specific socket
+      userSocketMap[userId] = userSocketMap[userId].filter(
+        (id) => id !== socket.id
+      );
+      console.log(
+        `User ${userId} disconnected. Remaining devices: ${userSocketMap[userId].length}`
+      );
+      // Clean up empty entries
+      if (userSocketMap[userId].length === 0) {
+        delete userSocketMap[userId];
+      }
     }
     // io.emit("getOnlineUsers", Object.keys(userSocketMap));
   });

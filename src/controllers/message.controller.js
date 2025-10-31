@@ -1,7 +1,7 @@
 import User from "../models/user.model.js";
 import Message from "../models/message.model.js";
 import UserConversation from "../models/userConversation.model.js";
-import { getReceiverSocketId, io } from "../socket/socket.js";
+import { getReceiverSocketIds, io } from "../socket/socket.js";
 import { notificationService } from "../services/notificationService.js";
 
 /////////////////////////////////////////////
@@ -58,11 +58,15 @@ export const sendMessage = async (req, res) => {
       await receiverConversation.save();
     }
 
-    // Always send socket notification if socket exists
-    const receiverSocketId = getReceiverSocketId(receiverId);
-    if (receiverSocketId) {
-      console.log("Receiver socket connected, sending real-time signal");
-      io.to(receiverSocketId).emit("newMessageSignal");
+    // Send socket notification to all connected devices of receiver
+    const receiverSocketIds = getReceiverSocketIds(receiverId);
+    if (receiverSocketIds.length > 0) {
+      console.log(
+        `Receiver has ${receiverSocketIds.length} device(s) connected, sending real-time signal`
+      );
+      receiverSocketIds.forEach((socketId) => {
+        io.to(socketId).emit("newMessageSignal");
+      });
     } else {
       console.log("Receiver socket not connected");
     }
