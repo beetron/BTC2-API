@@ -9,7 +9,9 @@ src/firebase/serviceAccountKey.json
 *.pem
 
 # File uploads (images)
+src/users/messageImage/*
 src/users/profileImage/*
+src/uploads/images/*
 
 ### Node ###
 # Logs
