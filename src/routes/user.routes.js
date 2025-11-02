@@ -1,7 +1,9 @@
 import express from "express";
 import protectRoute from "../middleware/protectRoute.js";
-// import uploadFile from "../middleware/uploadFile.js";
-import { uploadFile, resizeImage } from "../middleware/uploadFile.js";
+import {
+  uploadProfileImage,
+  resizeImage,
+} from "../middleware/uploadProfileImage.js";
 import {
   getFriendList,
   getFriendRequests,
@@ -27,10 +29,10 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-// Route for physically stored profile photos
-router.get("/profileImage/:filename", protectRoute, (req, res) => {
+// Route for physically stored images
+router.get("/uploads/images/:filename", protectRoute, (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, "../users/profileImage", filename);
+  const filePath = path.join(__dirname, "../uploads/images", filename);
 
   // Check if file exists
   if (!fs.existsSync(filePath)) {
@@ -53,7 +55,7 @@ router.put("/updateuniqueid/:uniqueId", protectRoute, updateUniqueId);
 router.put(
   "/updateprofileimage/",
   protectRoute,
-  uploadFile,
+  uploadProfileImage,
   resizeImage,
   updateProfileImage
 );

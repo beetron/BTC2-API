@@ -382,7 +382,7 @@ export const updateProfileImage = async (req, res) => {
       if (user.profileImage) {
         const existingImagePath = path.join(
           __dirname,
-          "../users/profileImage",
+          "../uploads/images",
           user.profileImage
         );
         try {

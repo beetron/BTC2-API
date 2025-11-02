@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Define upload directory relative to current file
-const uploadDir = path.join(__dirname, "../users/profileImage");
+const uploadDir = path.join(__dirname, "../uploads/images");
 
 // Ensure upload directory exists
 if (!fs.existsSync(uploadDir)) {
@@ -26,7 +26,7 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const uploadFile = multer({
+const uploadProfileImage = multer({
   storage: storage,
   limits: {
     fileSize: 20 * 1024 * 1024, // 20 MB limit
@@ -57,4 +57,4 @@ const resizeImage = async (req, res, next) => {
   }
 };
 
-export { uploadFile, resizeImage };
+export { uploadProfileImage, resizeImage };
