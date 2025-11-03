@@ -281,20 +281,39 @@ export const removeFriend = async (req, res) => {
 /////////////////////////////////////////////
 export const changePassword = async (req, res) => {
   try {
-    // Get user data
-    const userId = req.user;
+    // Get user ID from request
+    const userId = req.user._id;
 
-    // Retrieve password from request body
-    const { password } = req.body;
+    // Retrieve currentPassword and new password from request body
+    const { currentPassword, password } = req.body;
 
-    if (!userId) {
-      return res
-        .status(400)
-        .json({ error: "User not found, or session expired" });
+    // Check if currentPassword is provided
+    if (!currentPassword) {
+      return res.status(400).json({ error: "Current password is required" });
     }
+
+    // Check if new password is provided
+    if (!password) {
+      return res.status(400).json({ error: "New password is required" });
+    }
+
+    // Fetch user with password for verification
     const user = await User.findById(userId);
 
-    // Check if password is the same as the current password
+    if (!user) {
+      return res.status(401).json({ error: "User not found" });
+    }
+
+    // Verify currentPassword matches stored password
+    const isPasswordValid = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
+    if (!isPasswordValid) {
+      return res.status(400).json({ error: "Current password is incorrect" });
+    }
+
+    // Check if new password is the same as the current password
     const isSamePassword = await bcrypt.compare(password, user.password);
 
     if (isSamePassword) {
@@ -303,7 +322,7 @@ export const changePassword = async (req, res) => {
       });
     }
 
-    // Hash password
+    // Hash new password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -411,17 +430,35 @@ export const updateProfileImage = async (req, res) => {
 // Update email
 /////////////////////////////////////////////
 export const updateEmail = async (req, res) => {
-  // Get user data
-  const user = req.user;
+  // Get user ID from request
+  const userId = req.user._id;
 
-  // Retrieve email from request body
-  const { email } = req.body;
+  // Retrieve email and password from request body
+  const { email, password } = req.body;
 
   try {
+    // Check if password is provided
+    if (!password) {
+      return res.status(400).json({ error: "Password is required" });
+    }
+
+    // Fetch user with password for verification
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(401).json({ error: "User not found" });
+    }
+
+    // Verify password matches current password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(400).json({ error: "Password is incorrect" });
+    }
+
     // Check if email is already taken
     const emailExists = await User.findOne({
       email,
-      _id: { $ne: user._id },
+      _id: { $ne: userId },
     });
     if (emailExists) {
       return res.status(400).json({ error: "Email already taken" });
