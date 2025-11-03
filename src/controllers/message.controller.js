@@ -69,23 +69,22 @@ export const sendMessage = async (req, res) => {
       });
     } else {
       console.log("Receiver socket not connected");
+      // Send FCM notification only if receiver is not connected via socket
+      console.log("Sending FCM notification");
+      const sender = await User.findById(senderId);
+      // const senderName = sender ? sender.nickname || "User" : "User";
+
+      await notificationService(receiverId, {
+        // title: "BTC2: " + senderName,
+        title: "BTC2 updates",
+        body: message.length > 20 ? message.substring(0, 17) + "..." : message,
+        payload: {
+          messageId: newMessage._id.toString(),
+          senderId: senderId.toString(),
+          type: "chat_message",
+        },
+      });
     }
-
-    // Always send FCM notification regardless of socket connection
-    console.log("Sending FCM notification");
-    const sender = await User.findById(senderId);
-    // const senderName = sender ? sender.nickname || "User" : "User";
-
-    await notificationService(receiverId, {
-      // title: "BTC2: " + senderName,
-      title: "BTC2 updates",
-      body: message.length > 20 ? message.substring(0, 17) + "..." : message,
-      payload: {
-        messageId: newMessage._id.toString(),
-        senderId: senderId.toString(),
-        type: "chat_message",
-      },
-    });
 
     // Status 200 will be returnd regardless of receiver having FCM token or not
     return res.status(200).json({ success: true });
@@ -227,19 +226,18 @@ export const uploadImages = async (req, res) => {
       });
     } else {
       console.log("Receiver socket not connected");
+      // Send FCM notification only if receiver is not connected via socket
+      console.log("Sending FCM notification for image upload");
+      await notificationService(receiverId, {
+        title: "BTC2 updates",
+        body: "Received " + req.filenames.length + " image(s)",
+        payload: {
+          messageId: newMessage._id.toString(),
+          senderId: senderId.toString(),
+          type: "chat_image",
+        },
+      });
     }
-
-    // Always send FCM notification regardless of socket connection
-    console.log("Sending FCM notification for image upload");
-    await notificationService(receiverId, {
-      title: "BTC2 updates",
-      body: "Received " + req.filenames.length + " image(s)",
-      payload: {
-        messageId: newMessage._id.toString(),
-        senderId: senderId.toString(),
-        type: "chat_image",
-      },
-    });
 
     return res.status(200).json({ success: true });
   } catch (error) {
