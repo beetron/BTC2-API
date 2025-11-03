@@ -154,3 +154,96 @@ export const deleteMessages = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
+/////////////////////////////////////////////
+// Upload images to user
+/////////////////////////////////////////////
+export const uploadImages = async (req, res) => {
+  try {
+    const { id: receiverId } = req.params;
+    const senderId = req.user._id;
+
+    // Check if images were uploaded
+    if (!req.filenames || req.filenames.length === 0) {
+      return res.status(400).json({ error: "No images uploaded" });
+    }
+
+    // Use only filenames (no path prefix)
+    const imageFiles = req.filenames;
+
+    // Create new message with only imageFiles
+    const newMessage = await Message.create({
+      senderId,
+      receiverId,
+      imageFiles,
+    });
+
+    // Update or create new UserConversation for sender
+    let senderConversation = await UserConversation.findOne({
+      senderId,
+      receiverId,
+    });
+
+    if (!senderConversation) {
+      senderConversation = await UserConversation.create({
+        senderId,
+        receiverId,
+        messages: [newMessage._id],
+        lastReadMessageId: newMessage._id, // Marks read for sender
+      });
+    } else {
+      senderConversation.messages.push(newMessage._id);
+      senderConversation.lastReadMessageId = newMessage._id;
+      await senderConversation.save();
+    }
+
+    // Update or create UserConversation for receiver
+    let receiverConversation = await UserConversation.findOne({
+      senderId: receiverId,
+      receiverId: senderId,
+    });
+
+    if (!receiverConversation) {
+      receiverConversation = await UserConversation.create({
+        senderId: receiverId,
+        receiverId: senderId,
+        messages: [newMessage._id],
+        unreadCount: 1, // Unread for receiver
+      });
+    } else {
+      receiverConversation.messages.push(newMessage._id);
+      receiverConversation.unreadCount += 1;
+      await receiverConversation.save();
+    }
+
+    // Send socket notification to all connected devices of receiver
+    const receiverSocketIds = getReceiverSocketIds(receiverId);
+    if (receiverSocketIds.length > 0) {
+      console.log(
+        `Receiver has ${receiverSocketIds.length} device(s) connected, sending real-time signal`
+      );
+      receiverSocketIds.forEach((socketId) => {
+        io.to(socketId).emit("newMessageSignal");
+      });
+    } else {
+      console.log("Receiver socket not connected");
+    }
+
+    // Always send FCM notification regardless of socket connection
+    console.log("Sending FCM notification for image upload");
+    await notificationService(receiverId, {
+      title: "BTC2 updates",
+      body: "Received " + req.filenames.length + " image(s)",
+      payload: {
+        messageId: newMessage._id.toString(),
+        senderId: senderId.toString(),
+        type: "chat_image",
+      },
+    });
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.log("Error in uploadImages controller: ", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};

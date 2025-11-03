@@ -29,7 +29,7 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-// Route for physically stored images
+// Route for physically stored profile images
 router.get("/uploads/images/:filename", protectRoute, (req, res) => {
   const filename = req.params.filename;
   const filePath = path.join(__dirname, "../uploads/images", filename);
