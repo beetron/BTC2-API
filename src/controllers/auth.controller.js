@@ -2,6 +2,10 @@ import bcrypt from "bcryptjs";
 import User from "../models/user.model.js";
 import generateToken from "../utility/generateToken.js";
 import { sendEmail } from "../utility/sendEmail.js";
+import UserConversation from "../models/userConversation.model.js";
+import Message from "../models/message.model.js";
+import fs from 'fs';
+import path from 'path';
 
 /////////////////////////////////////////////
 // Signup (signup assigns username as the default uniqueId)
@@ -200,5 +204,99 @@ export const forgotPassword = async (req, res) => {
     return res
       .status(500)
       .json({ error: "Internal server error, please try again later" });
+  }
+};
+
+/////////////////////////////////////////////
+// Delete account
+/////////////////////////////////////////////
+export const deleteAccount = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Remove userId from friendList, friendRequests, and blockedUsers
+    await User.updateMany(
+      {
+        $or: [
+          { friendList: userId },
+          { friendRequests: userId },
+          { blockedUsers: userId }
+        ]
+      },
+      {
+        $pull: {
+          friendList: userId,
+          friendRequests: userId,
+          blockedUsers: userId
+        }
+      }
+    );
+
+    // Find messages involving the user and collect imageFiles
+    const messagesToDelete = await Message.find({
+      $or: [{ senderId: userId }, { receiverId: userId }]
+    });
+
+    const imageFilesToCheck = [];
+    messagesToDelete.forEach(msg => {
+      if (msg.imageFiles && msg.imageFiles.length > 0) {
+        imageFilesToCheck.push(...msg.imageFiles);
+      }
+    });
+
+    // Delete messages
+    await Message.deleteMany({
+      $or: [{ senderId: userId }, { receiverId: userId }]
+    });
+
+    // Delete conversations
+    await UserConversation.deleteMany({
+      $or: [{ senderId: userId }, { receiverId: userId }]
+    });
+
+    // Cleanup unreferenced image files
+    const uploadsDir = path.join(process.cwd(), 'src', 'uploads', 'images');
+    const handleImageFileCleanup = async (imageFiles) => {
+      try {
+        if (!imageFiles || imageFiles.length === 0) return;
+
+        for (const imageFile of imageFiles) {
+          // Check if file exists in database
+          const remainingMessages = await Message.find({
+            imageFiles: imageFile
+          });
+
+          if (remainingMessages.length === 0) {
+            // No other messages reference this file, delete it
+            const filePath = path.join(uploadsDir, imageFile);
+            
+            try {
+              await fs.promises.unlink(filePath);
+              console.log(`Deleted unused image file: ${imageFile}`);
+            } catch (error) {
+              console.error(`Error deleting image file ${imageFile}:`, error);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error in image cleanup:', error);
+      }
+    };
+
+    await handleImageFileCleanup(imageFilesToCheck);
+
+    // Delete the user
+    await User.findByIdAndDelete(userId);
+
+    res.status(200).json({ message: "Account deleted successfully" });
+  } catch (error) {
+    console.log("Error in deleteAccount controller: ", error.message);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
