@@ -3,6 +3,8 @@ import Message from "../models/message.model.js";
 import UserConversation from "../models/userConversation.model.js";
 import { getReceiverSocketIds, io } from "../socket/socket.js";
 import { notificationService } from "../services/notificationService.js";
+import fs from 'fs';
+import path from 'path';
 
 /////////////////////////////////////////////
 // Send message to user
@@ -146,7 +148,41 @@ export const deleteMessages = async (req, res) => {
       return res.status(404).json({ error: "Conversation not found" });
     }
 
+    const uploadsDir = path.join(process.cwd(), 'src', 'uploads', 'images');
+
+    // Add helper function to handle image file cleanup
+    const handleImageFileCleanup = async (imageFiles) => {
+      try {
+        if (!imageFiles || imageFiles.length === 0) return;
+
+        for (const imageFile of imageFiles) {
+          // Check if file exists in database
+          const remainingMessages = await Message.find({
+            imageFiles: imageFile
+          });
+
+          if (remainingMessages.length === 0) {
+            // No other messages reference this file, delete it
+            const filePath = path.join(uploadsDir, imageFile);
+            
+            try {
+              await fs.promises.unlink(filePath);
+              console.log(`Deleted unused image file: ${imageFile}`);
+            } catch (error) {
+              console.error(`Error deleting image file ${imageFile}:`, error);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error in image cleanup:', error);
+      }
+    };
+
     await conversation.deleteMessagesUpTo(messageId);
+    
+    // Cleanup unreferenced image files
+    await handleImageFileCleanup(message.imageFiles);
+    
     res.status(200).json({ message: "Messages deleted successfully" });
   } catch (error) {
     console.log("Error in deleteMessages controller: ", error.message);
