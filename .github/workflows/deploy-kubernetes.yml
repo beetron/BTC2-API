@@ -70,8 +70,8 @@ jobs:
           IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
           echo "Updating image to: $IMAGE_NAME"
 
-          # Use yq to update the image tag
-          yq eval -d 0 ".spec.template.spec.containers[0].image = \"$IMAGE_NAME\"" -i ${{ env.DEPLOYMENT_FILE }}
+          # Use yq to update the image tag - target only Deployment resources
+          yq eval 'select(.kind == "Deployment") | .spec.template.spec.containers[0].image = "'"$IMAGE_NAME"'"' -i ${{ env.DEPLOYMENT_FILE }}
 
           echo "Updated deployment YAML:"
           cat ${{ env.DEPLOYMENT_FILE }} | grep "image:"
