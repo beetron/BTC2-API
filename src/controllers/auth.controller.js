@@ -5,8 +5,8 @@ import { sendEmail } from "../utility/sendEmail.js";
 import UserConversation from "../models/userConversation.model.js";
 import Message from "../models/message.model.js";
 import { handleImageFileCleanup } from "../utility/imageCleanup.js";
-import fs from 'fs';
-import path from 'path';
+import fs from "fs";
+import path from "path";
 
 /////////////////////////////////////////////
 // Signup (signup assigns username as the default uniqueId)
@@ -66,6 +66,8 @@ export const signup = async (req, res) => {
       await User.findByIdAndUpdate(friend._id, {
         $push: { friendList: newUser._id },
       });
+
+      console.log("New user signed up:", newUser.username);
 
       res.status(201).json({
         _id: newUser._id,
@@ -216,6 +218,14 @@ export const forgotPassword = async (req, res) => {
 export const deleteAccount = async (req, res) => {
   try {
     const { userId } = req.params;
+    const requestingUserId = req.user._id;
+
+    // Check if requesting user is the account owner
+    if (requestingUserId.toString() !== userId) {
+      return res
+        .status(403)
+        .json({ error: "Unauthorized: You can only delete your own account" });
+    }
 
     // Check if user exists
     const user = await User.findById(userId);
@@ -229,25 +239,25 @@ export const deleteAccount = async (req, res) => {
         $or: [
           { friendList: userId },
           { friendRequests: userId },
-          { blockedUsers: userId }
-        ]
+          { blockedUsers: userId },
+        ],
       },
       {
         $pull: {
           friendList: userId,
           friendRequests: userId,
-          blockedUsers: userId
-        }
+          blockedUsers: userId,
+        },
       }
     );
 
     // Find messages involving the user and collect imageFiles
     const messagesToDelete = await Message.find({
-      $or: [{ senderId: userId }, { receiverId: userId }]
+      $or: [{ senderId: userId }, { receiverId: userId }],
     });
 
     const imageFilesToCheck = [];
-    messagesToDelete.forEach(msg => {
+    messagesToDelete.forEach((msg) => {
       if (msg.imageFiles && msg.imageFiles.length > 0) {
         imageFilesToCheck.push(...msg.imageFiles);
       }
@@ -255,12 +265,12 @@ export const deleteAccount = async (req, res) => {
 
     // Delete messages
     await Message.deleteMany({
-      $or: [{ senderId: userId }, { receiverId: userId }]
+      $or: [{ senderId: userId }, { receiverId: userId }],
     });
 
     // Delete conversations
     await UserConversation.deleteMany({
-      $or: [{ senderId: userId }, { receiverId: userId }]
+      $or: [{ senderId: userId }, { receiverId: userId }],
     });
 
     // Cleanup unreferenced image files
