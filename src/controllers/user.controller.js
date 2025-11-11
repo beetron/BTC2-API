@@ -381,7 +381,7 @@ export const updateUniqueId = async (req, res) => {
     user.uniqueId = uniqueId;
     await user.save();
 
-    return res.status(200).json({ message: "UniqueId updated" });
+    return res.status(200).json({ message: "Unique ID updated" });
   } catch (error) {
     console.log("Error in updateUniqueId controller: ", error.message);
     res.status(500).json({ error: "Internal server error" });
@@ -430,6 +430,9 @@ export const updateProfileImage = async (req, res) => {
 // Update email
 /////////////////////////////////////////////
 export const updateEmail = async (req, res) => {
+  // Debugging log
+  console.log("Update email requested", req.body.email);
+
   // Get user ID from request
   const userId = req.user._id;
 
