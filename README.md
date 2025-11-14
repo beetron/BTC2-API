@@ -33,9 +33,11 @@ A secure WebSocket-enabled REST API for real-time messaging with push notificati
 - Forgot username, Forgot password
 - Update nickname/unique ID/profile image
 - Change password, email
-- Send message, get messages
+- Send message, get messages, upload images in messages
 - Check unread messages count
 - Get friend list, send/accept/reject/remove friend requests
+- Report users for moderation
+- Delete account
 - Push notifications via Firebase
 - Real-time messaging via Socket.IO
 
@@ -52,8 +54,8 @@ A secure WebSocket-enabled REST API for real-time messaging with push notificati
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/beetron/btc2_API
-   cd btc2_api
+   git clone https://github.com/beetron/btc2-api
+   cd btc2-api
    ```
 
 ````
@@ -76,11 +78,17 @@ JWT_SECRET=key
 # Server port (default: 3000)
 PORT=3000
 
+# CORS origins (comma-separated)
+CORS_ORIGIN=https://yourapp.com,https://app.yourapp.com
+
 # SMTP configuration for email sending
 SMTP_HOST=mail.example.com
 SMTP_USER=from@example.com
 SMTP_PASS="password"
 SMTP_FROM="BTC2-Notifications <from@example.com>"
+
+# Admin email for user reports
+ADMIN_EMAIL=admin@yourapp.com
 
 # Node environment
 NODE_ENV=production   # for production
@@ -91,21 +99,25 @@ NODE_ENV=development  # for development
 ## 🏗️ Architecture
 
 - API version is tracked in `package.json` and used for docker image versioning.
-- Profile images are stored in `/src/users/profileImage` and handled via `multer` and `sharp`.
-- Real-time messaging is handled via Socket.IO.
+- Profile images are stored in `/src/uploads/images` and handled via `multer` and `sharp`.
+- Message images are stored in `/src/uploads/images` with automatic cleanup.
+- Real-time messaging is handled via Socket.IO with multi-device support.
 - Push notifications are sent via Firebase Cloud Messaging.
+- User reports are emailed to administrators for moderation.
+- Account deletion includes cleanup of all associated messages and conversations.
 
 ### 🔐 Authentication
 
 - POST `/auth/signup` - Create new account
 - POST `/auth/login` - Login user
 - POST `/auth/logout` - Logout user
-- GET `/auth/forgotusername` - Forgot username
-- GET `/auth/forgotpassword` - Forgot password
+- POST `/auth/forgotusername` - Forgot username
+- POST `/auth/forgotpassword` - Forgot password
+- DELETE `/auth/deleteAccount/:userId` - Delete account (requires authentication)
 
 ### 👤 User
 
-- GET `/users/profileImage/:filename` - Get profile image
+- GET `/users/uploads/images/:filename` - Get profile image
 - GET `/users/friendlist` - Get friend list
 - GET `/users/friendrequests` - Get friend requests
 - PUT `/users/addfriend/:uniqueId` - Send friend request
@@ -119,11 +131,14 @@ NODE_ENV=development  # for development
 - PUT `/users/updateemail` - Update email
 - PUT `/users/fcm/register` - Register FCM token
 - DELETE `/users/fcm/token` - Delete FCM token
+- POST `/users/reportuser` - Report user for moderation
 
 ### 💬 Messages
 
 - POST `/messages/send/:id` - Send message to user
+- POST `/messages/upload/:id` - Upload images in messages
 - GET `/messages/get/:id` - Get conversation history
+- GET `/messages/uploads/images/:filename` - Get message image
 - DELETE `/messages/delete/:id` - Delete messages
 
 ### 🔌 Socket.IO
@@ -133,17 +148,21 @@ NODE_ENV=development  # for development
 
 ## 🐳 Deployment
 
-- Docker and docker-compose supported.
+- Docker and docker-compose supported with health checks and SSL configuration.
 - Example:
   ```bash
   docker build -t btc2api:latest .
   docker-compose up -d
   ```
+- Health check endpoint available at `/health`
+- API version endpoint available at `/config`
 
 ```
 
 ---
 
 **Note:**
-- No SSL/HTTPS is used; TLS/SSL is handled by nginx for production.
+- No SSL/HTTPS is used in the application; TLS/SSL is handled by nginx for production.
+- CORS is configured via environment variables for security.
+- All routes except health checks require authentication via JWT tokens.
 ```
