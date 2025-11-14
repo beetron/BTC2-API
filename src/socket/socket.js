@@ -24,7 +24,8 @@ export const getReceiverSocketIds = (receiverId) => {
 const userSocketMap = {};
 
 io.on("connection", (socket) => {
-  console.log("client has connected", socket.id);
+  const currentTime = new Date().toISOString();
+  console.log(currentTime, ": client has connected :", socket.id);
 
   // Get userId from query on connection to socket
   const userId = socket.handshake.query.userId;

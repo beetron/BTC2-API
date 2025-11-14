@@ -18,6 +18,7 @@ import {
   registerFcmToken,
   deleteFcmToken,
   changePassword,
+  reportUser,
 } from "../controllers/user.controller.js";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -62,5 +63,6 @@ router.put(
 router.put("/updateemail", protectRoute, updateEmail);
 router.put("/fcm/register", protectRoute, registerFcmToken);
 router.delete("/fcm/token", protectRoute, deleteFcmToken);
+router.post("/reportuser", protectRoute, reportUser);
 
 export default router;

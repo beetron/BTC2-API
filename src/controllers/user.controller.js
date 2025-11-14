@@ -4,6 +4,7 @@ import fs from "fs-extra";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { fileURLToPath } from "url";
+import { sendEmail } from "../utility/sendEmail.js";
 
 // Used for getting the curent directory path regardless of environment
 const __filename = fileURLToPath(import.meta.url);
@@ -423,6 +424,54 @@ export const updateProfileImage = async (req, res) => {
   } catch (error) {
     console.log("Error in updateProfileImage controller: ", error.message);
     return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+/////////////////////////////////////////////
+// Report user
+/////////////////////////////////////////////
+export const reportUser = async (req, res) => {
+  const reporterUsername = req.user.username;
+
+  // Retrieve friendId and reason from request body
+  const { reason, friendId } = req.body;
+
+  try {
+    // Validate required fields
+    if (!friendId || !reason) {
+      return res
+        .status(400)
+        .json({ error: "Friend ID and reason are required" });
+    }
+
+    // Find the reported user by ObjectId
+    const reportedUser = await User.findById(friendId);
+    if (!reportedUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Check if user is reporting themselves
+    if (req.user._id.equals(reportedUser._id)) {
+      return res.status(400).json({ error: "You cannot report yourself" });
+    }
+
+    // Get current date and time
+    const currentDateTime = new Date().toLocaleString();
+
+    // Format email body with line breaks
+    const emailBody = `${currentDateTime}\n${reporterUsername} has reported ${reportedUser.username} for:\n${reason}`;
+
+    // Send email
+    await sendEmail({
+      to: process.env.ADMIN_EMAIL,
+      subject: `Reporting user ${reportedUser.username}`,
+      text: emailBody,
+    });
+    console.log("Report email sent: ", emailBody);
+    return res.status(200).json({ message: "User reported successfully" });
+  } catch (error) {
+    console.log("Error in reportUser controller: ", error.message);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
