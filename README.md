@@ -90,6 +90,10 @@ SMTP_FROM="BTC2-Notifications <from@example.com>"
 # Admin email for user reports
 ADMIN_EMAIL=admin@yourapp.com
 
+# Prometheus metrics configuration
+ENABLE_METRICS=false          # set to true to enable metrics collection
+METRICS_PORT=9090             # port for Prometheus metrics endpoint (default: 9090)
+
 # Node environment
 NODE_ENV=production   # for production
 FIREBASE_KEY # for production - fcm key json
@@ -105,6 +109,11 @@ NODE_ENV=development  # for development
 - Push notifications are sent via Firebase Cloud Messaging.
 - User reports are emailed to administrators for moderation.
 - Account deletion includes cleanup of all associated messages and conversations.
+- **Prometheus metrics** (optional) available on port 9090 when `ENABLE_METRICS=true`
+  - HTTP request metrics (duration, total count)
+  - Custom API metrics (messages, friend requests, user registrations)
+  - Socket.IO connection tracking
+  - System metrics (CPU, memory, uptime)
 
 ### 🔐 Authentication
 
