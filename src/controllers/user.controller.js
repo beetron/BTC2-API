@@ -5,6 +5,8 @@ import path from "path";
 import bcrypt from "bcryptjs";
 import { fileURLToPath } from "url";
 import { sendEmail } from "../utility/sendEmail.js";
+import { handleImageFileCleanup } from "../utility/imageCleanup.js";
+import Message from "../models/message.model.js";
 
 // Used for getting the curent directory path regardless of environment
 const __filename = fileURLToPath(import.meta.url);
@@ -115,6 +117,19 @@ export const addFriendRequest = async (req, res) => {
     if (requestReceiver._id.equals(user._id)) {
       console.log({ error: "Cannot add yourself" });
       return res.status(400).json({ error: "Cannot add yourself" });
+    }
+
+    // If the receiver has blocked the requesting user, silently return success to conceal blocking
+    if (
+      requestReceiver.blockedUsers &&
+      requestReceiver.blockedUsers
+        .map((id) => id.toString())
+        .includes(user._id.toString())
+    ) {
+      console.log(
+        `Blocked friend request: User ${user._id} attempted to add ${requestReceiver._id} but is blocked.`
+      );
+      return res.status(200).json({ message: "Friend request sent" });
     }
 
     // Check if user is already pending add request
@@ -428,6 +443,118 @@ export const updateProfileImage = async (req, res) => {
 };
 
 /////////////////////////////////////////////
+// Block user
+/////////////////////////////////////////////
+export const blockUser = async (req, res) => {
+  const userId = req.user._id;
+
+  // UserId to block
+  const { friendId } = req.params;
+
+  try {
+    // Error if missing parameters from request
+    if (!friendId || !userId)
+      return res.status(400).json({ error: "Missing parameters" });
+
+    // Find both users in database
+    const user = await User.findById(userId);
+    const friendToBlock = await User.findById(friendId);
+
+    // Error if user or friend not in database
+    if (!user || !friendToBlock) {
+      console.log(
+        `Block requested but user ${userId} or target ${friendId} not found`
+      );
+      return res.status(404).json({ error: "User or Friend not found" });
+    }
+
+    // Prevent blocking yourself
+    if (userId.toString() === friendId.toString()) {
+      console.log(`User ${userId} attempted to block themselves`);
+      return res.status(400).json({ error: "Cannot block yourself" });
+    }
+
+    // Check if already blocked & block user (use string comparisons to avoid ObjectId mismatch)
+    const alreadyBlocked = user.blockedUsers
+      .map((id) => id.toString())
+      .includes(friendToBlock._id.toString());
+
+    if (alreadyBlocked) {
+      console.log(
+        `Block requested but user ${friendId} is already blocked for ${userId}`
+      );
+      return res.status(400).json({ error: "User already blocked" });
+    } else {
+      // Atomic update to prevent duplicates and race conditions
+      await User.findByIdAndUpdate(userId, {
+        $addToSet: { blockedUsers: friendToBlock._id },
+      });
+
+      // Remove each other from friend lists (if friends)
+      await User.findByIdAndUpdate(userId, {
+        $pull: { friendList: friendToBlock._id },
+      });
+      await User.findByIdAndUpdate(friendToBlock._id, {
+        $pull: { friendList: userId },
+      });
+
+      // Clear any pending friend requests between the users
+      await User.findByIdAndUpdate(userId, {
+        $pull: { friendRequests: friendToBlock._id },
+      });
+      await User.findByIdAndUpdate(friendToBlock._id, {
+        $pull: { friendRequests: userId },
+      });
+
+      // Delete any user conversations and messages between the two users
+      const conversationA = await UserConversation.findOne({
+        senderId: userId,
+        receiverId: friendToBlock._id,
+      });
+      const conversationB = await UserConversation.findOne({
+        senderId: friendToBlock._id,
+        receiverId: userId,
+      });
+
+      // Collect all message ids referenced in both conversations
+      const allMessageIds = [
+        ...(conversationA?.messages || []),
+        ...(conversationB?.messages || []),
+      ];
+
+      if (allMessageIds.length > 0) {
+        // Find messages and gather image files
+        const messagesToDelete = await Message.find({
+          _id: { $in: allMessageIds },
+        });
+        const allImageFiles = messagesToDelete.flatMap(
+          (m) => m.imageFiles || []
+        );
+
+        // Delete Message documents that belong to this pair (safe because conversations are removed)
+        await Message.deleteMany({ _id: { $in: allMessageIds } });
+
+        // Cleanup unreferenced image files
+        await handleImageFileCleanup(allImageFiles);
+      }
+
+      // Remove conversations for both sides
+      if (conversationA) await conversationA.deleteOne();
+      if (conversationB) await conversationB.deleteOne();
+
+      console.log(
+        `User ${userId} blocked ${friendId} - removed friendship, cleared friend requests and deleted conversations/messages`
+      );
+
+      return res.status(200).json({ message: "User blocked successfully" });
+    }
+  } catch (error) {
+    console.log("Error in blockUser controller: ", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+/////////////////////////////////////////////
 // Report user
 /////////////////////////////////////////////
 export const reportUser = async (req, res) => {
@@ -471,6 +598,88 @@ export const reportUser = async (req, res) => {
     return res.status(200).json({ message: "User reported successfully" });
   } catch (error) {
     console.log("Error in reportUser controller: ", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+/////////////////////////////////////////////
+// Unblock user
+/////////////////////////////////////////////
+export const unblockUser = async (req, res) => {
+  const userId = req.user._id;
+  const { friendId } = req.params;
+
+  try {
+    if (!friendId || !userId)
+      return res.status(400).json({ error: "Missing parameters" });
+
+    const user = await User.findById(userId);
+    const friendToUnblock = await User.findById(friendId);
+
+    if (!user || !friendToUnblock) {
+      return res.status(404).json({ error: "User or Friend not found" });
+    }
+
+    // Ensure that the friend is actually blocked
+    const isBlocked = user.blockedUsers
+      .map((id) => id.toString())
+      .includes(friendToUnblock._id.toString());
+
+    if (!isBlocked) {
+      console.log(
+        `Unblock requested but user ${friendId} is not blocked for ${userId}`
+      );
+      return res.status(400).json({ error: "User is not blocked" });
+    }
+
+    // Atomically remove from blockedUsers
+    await User.findByIdAndUpdate(userId, {
+      $pull: { blockedUsers: friendToUnblock._id },
+    });
+
+    console.log(`User ${userId} unblocked ${friendId}`);
+    return res.status(200).json({ message: "User unblocked successfully" });
+  } catch (error) {
+    console.log("Error in unblockUser controller: ", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+/////////////////////////////////////////////
+// Get blocked users
+/////////////////////////////////////////////
+export const getBlockedUsers = async (req, res) => {
+  try {
+    const user = req.user;
+
+    // `protectRoute` ensures user exists and is set on req.user; return empty if not
+    if (!user) {
+      console.log(`Blocked users requested but req.user missing`);
+      return res.status(200).json([]);
+    }
+
+    // Get blocked user IDs from user's document using optional chaining
+    const blockedIds = Array.isArray(user?.blockedUsers)
+      ? user.blockedUsers
+      : [];
+
+    // Return empty array if there are none
+    if (blockedIds.length === 0) {
+      console.log(`User ${req.user._id} requested blocked users: none`);
+      return res.status(200).json([]);
+    }
+
+    // Fetch basic info for each blocked user
+    const blockedUsers = await User.find({ _id: { $in: blockedIds } }).select(
+      "_id nickname profileImage"
+    );
+
+    console.log(
+      `User ${req.user._id} requested blocked users: ${blockedUsers.length}`
+    );
+    return res.status(200).json(blockedUsers);
+  } catch (error) {
+    console.log("Error in getBlockedUsers controller: ", error.message);
     res.status(500).json({ error: "Internal server error" });
   }
 };

@@ -19,6 +19,9 @@ import {
   deleteFcmToken,
   changePassword,
   reportUser,
+  unblockUser,
+  getBlockedUsers,
+  blockUser,
 } from "../controllers/user.controller.js";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -64,5 +67,8 @@ router.put("/updateemail", protectRoute, updateEmail);
 router.put("/fcm/register", protectRoute, registerFcmToken);
 router.delete("/fcm/token", protectRoute, deleteFcmToken);
 router.post("/reportuser", protectRoute, reportUser);
+router.put("/blockuser/:friendId", protectRoute, blockUser);
+router.put("/unblockuser/:friendId", protectRoute, unblockUser);
+router.get("/blockedusers", protectRoute, getBlockedUsers);
 
 export default router;
