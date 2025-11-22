@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import express from "express";
 import http from "http";
+import { dateNow } from "../utility/dateNow.js";
 
 const app = express();
 
@@ -15,6 +16,8 @@ const io = new Server(server, {
   },
 });
 
+const timeNow = dateNow();
+
 // Get all socket IDs for a receiver (handles multiple devices)
 export const getReceiverSocketIds = (receiverId) => {
   return userSocketMap[receiverId] || [];
@@ -24,8 +27,7 @@ export const getReceiverSocketIds = (receiverId) => {
 const userSocketMap = {};
 
 io.on("connection", (socket) => {
-  const currentTime = new Date().toISOString();
-  console.log(currentTime, ": client has connected :", socket.id);
+  console.log(`${timeNow}: client socket Connected : ${socket.id}`);
 
   // Get userId from query on connection to socket
   const userId = socket.handshake.query.userId;
@@ -38,7 +40,7 @@ io.on("connection", (socket) => {
     // Add this socket to the user's sockets (supports mobile, web, tablet, etc.)
     userSocketMap[userId].push(socket.id);
     console.log(
-      `User ${userId} connected. Total devices: ${userSocketMap[userId].length}`
+      `${timeNow}: User ${userId} Devices: ${userSocketMap[userId].length}`
     );
   } else {
     console.log("Invalid userId:", userId);
@@ -48,14 +50,14 @@ io.on("connection", (socket) => {
   // io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
   socket.on("disconnect", () => {
-    console.log("client has disconnected", socket.id);
+    console.log(`${timeNow}: client socket Disconnected:: ${socket.id}`);
     if (userId && userId !== "undefined") {
       // Remove only this specific socket
       userSocketMap[userId] = userSocketMap[userId].filter(
         (id) => id !== socket.id
       );
       console.log(
-        `User ${userId} disconnected. Remaining devices: ${userSocketMap[userId].length}`
+        `${timeNow}: User ${userId} Devices: ${userSocketMap[userId].length}`
       );
       // Clean up empty entries
       if (userSocketMap[userId].length === 0) {

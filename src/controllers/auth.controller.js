@@ -5,20 +5,21 @@ import { sendEmail } from "../utility/sendEmail.js";
 import UserConversation from "../models/userConversation.model.js";
 import Message from "../models/message.model.js";
 import { handleImageFileCleanup } from "../utility/imageCleanup.js";
-import fs from "fs";
-import path from "path";
+import { dateNow } from "../utility/dateNow.js";
 
 /////////////////////////////////////////////
 // Signup (signup assigns username as the default uniqueId)
 /////////////////////////////////////////////
 export const signup = async (req, res) => {
   try {
+    const timeNow = dateNow();
     const { username, password, email, uniqueId } = req.body;
 
     // Check if friend's uniqueId exists
     const friend = await User.findOne({ uniqueId });
 
     if (!friend) {
+      console.log(`${timeNow}: Signup failed, friendId invalid: , ${uniqueId}`);
       return res.status(400).json({ error: "Friend's Unique ID incorrect" });
     }
 
@@ -90,6 +91,7 @@ export const signup = async (req, res) => {
 /////////////////////////////////////////////
 export const login = async (req, res) => {
   try {
+    const timeNow = dateNow();
     const { username, password } = req.body;
 
     // Convert username to lowercase
@@ -106,11 +108,16 @@ export const login = async (req, res) => {
 
     // Check credentials
     if (!user || !isPasswordCorrect) {
+      console.log(
+        `${timeNow}: Invalid login attempt for username: ${usernameLowerCase}`
+      );
       return res.status(400).json({ error: "Invalid login information" });
     }
 
     // Generate token
     const token = generateToken(user._id);
+
+    console.log(`${timeNow}: ${user.username} logged in`);
 
     res.status(200).json({
       _id: user._id,
