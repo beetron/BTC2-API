@@ -16,8 +16,6 @@ const io = new Server(server, {
   },
 });
 
-const timeNow = dateNow();
-
 // Get all socket IDs for a receiver (handles multiple devices)
 export const getReceiverSocketIds = (receiverId) => {
   return userSocketMap[receiverId] || [];
@@ -27,7 +25,8 @@ export const getReceiverSocketIds = (receiverId) => {
 const userSocketMap = {};
 
 io.on("connection", (socket) => {
-  console.log(`${timeNow}: client socket Connected : ${socket.id}`);
+  const connectTime = dateNow();
+  console.log(`${connectTime}: client socket Connected : ${socket.id}`);
 
   // Get userId from query on connection to socket
   const userId = socket.handshake.query.userId;
@@ -37,10 +36,10 @@ io.on("connection", (socket) => {
     if (!userSocketMap[userId]) {
       userSocketMap[userId] = [];
     }
-    // Add this socket to the user's sockets (supports mobile, web, tablet, etc.)
+    // Add this socket to the user's sockets
     userSocketMap[userId].push(socket.id);
     console.log(
-      `${timeNow}: User ${userId} Devices: ${userSocketMap[userId].length}`
+      `${connectTime}: User ${userId} Devices: ${userSocketMap[userId].length}`
     );
   } else {
     console.log("Invalid userId:", userId);
@@ -50,14 +49,15 @@ io.on("connection", (socket) => {
   // io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
   socket.on("disconnect", () => {
-    console.log(`${timeNow}: client socket Disconnected:: ${socket.id}`);
+    const disconnectTime = dateNow();
+    console.log(`${disconnectTime}: client socket Disconnected:: ${socket.id}`);
     if (userId && userId !== "undefined") {
       // Remove only this specific socket
       userSocketMap[userId] = userSocketMap[userId].filter(
         (id) => id !== socket.id
       );
       console.log(
-        `${timeNow}: User ${userId} Devices: ${userSocketMap[userId].length}`
+        `${disconnectTime}: User ${userId} Devices: ${userSocketMap[userId].length}`
       );
       // Clean up empty entries
       if (userSocketMap[userId].length === 0) {
