@@ -62,8 +62,9 @@ app.use(`/auth`, authRoutes);
 app.use(`/messages`, messageRoutes);
 app.use(`/users`, userRoutes);
 
+await connectToMongoDB();
+
 server.listen(PORT, () => {
-  connectToMongoDB();
   console.log(`Server running on port ${PORT} `);
 
   // Start metrics server on separate port if enabled

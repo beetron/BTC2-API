@@ -37,13 +37,17 @@ const userConversationSchema = new mongoose.Schema(
 );
 
 // Get messages
-userConversationSchema.methods.getMessages = async function () {
+// Capped to the most recent `limit` messages -- full-history reads are
+// unbounded otherwise and don't scale with conversation size.
+userConversationSchema.methods.getMessages = async function (limit = 200) {
   const messages = await Message.find({
     _id: { $in: this.messages },
     createdAt: {
       $gt: this.deleteFromTimestamp || new Date(0),
     },
-  }).sort({ createdAt: -1 });
+  })
+    .sort({ createdAt: -1 })
+    .limit(limit);
 
   // Update lastReadMessageId if there are messages
   if (messages.length > 0) {

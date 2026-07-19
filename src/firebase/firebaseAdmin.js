@@ -1,4 +1,4 @@
-import admin from "firebase-admin";
+import { initializeApp, cert } from "firebase-admin/app";
 import { createRequire } from "module";
 
 const appEnvironment = process.env.NODE_ENV;
@@ -13,8 +13,8 @@ if (appEnvironment === "production") {
   serviceAccount = require("./serviceAccountKey.json");
 }
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+const firebaseApp = initializeApp({
+  credential: cert(serviceAccount),
 });
 
-export default admin;
+export default firebaseApp;

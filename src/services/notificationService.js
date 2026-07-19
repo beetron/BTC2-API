@@ -1,4 +1,5 @@
-import admin from "../firebase/firebaseAdmin.js";
+import { getMessaging } from "firebase-admin/messaging";
+import "../firebase/firebaseAdmin.js";
 import User from "../models/user.model.js";
 import UserConversation from "../models/userConversation.model.js";
 import { ObjectId } from "mongodb";
@@ -51,7 +52,7 @@ export const notificationService = async (recipientId, data) => {
       },
     };
 
-    const response = await admin.messaging().sendEachForMulticast(message);
+    const response = await getMessaging().sendEachForMulticast(message);
 
     // Handle failed tokens
     if (response.failureCount > 0) {
@@ -68,7 +69,7 @@ export const notificationService = async (recipientId, data) => {
           {
             _id: recipientId,
           },
-          { $pull: { fcmTokens: { token: { $in: failedTokens } } } }
+          { $pull: { fcmTokens: { token: { $in: failedTokens } } } },
         );
       }
     }
