@@ -11,6 +11,8 @@ import { dirname, join } from "path";
 import authRoutes from "./src/routes/auth.routes.js";
 import messageRoutes from "./src/routes/messages.routes.js";
 import userRoutes from "./src/routes/user.routes.js";
+import conversationRoutes from "./src/routes/conversation.routes.js";
+import linkPreviewRoutes from "./src/routes/linkPreview.routes.js";
 import connectToMongoDB from "./src/db/connectToMongoDB.js";
 import { app, server } from "./src/socket/socket.js";
 import { metricsMiddleware } from "./src/middleware/metricsMiddleware.js";
@@ -61,6 +63,8 @@ console.log(`API Version: ${API_VERSION}`);
 app.use(`/auth`, authRoutes);
 app.use(`/messages`, messageRoutes);
 app.use(`/users`, userRoutes);
+app.use(`/conversations`, conversationRoutes);
+app.use(`/link-preview`, linkPreviewRoutes);
 
 await connectToMongoDB();
 

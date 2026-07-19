@@ -1,9 +1,16 @@
 import bcrypt from "bcryptjs";
 import User from "../models/user.model.js";
-import generateToken from "../utility/generateToken.js";
+import generateAccessToken from "../utility/generateToken.js";
+import {
+  generateRefreshToken,
+  rotateRefreshToken,
+  revokeRefreshToken,
+} from "../services/tokenService.js";
 import { sendEmail } from "../utility/sendEmail.js";
 import UserConversation from "../models/userConversation.model.js";
 import Message from "../models/message.model.js";
+import Conversation from "../models/conversation.model.js";
+import ConversationReadState from "../models/conversationReadState.model.js";
 import { handleImageFileCleanup } from "../utility/imageCleanup.js";
 import { dateNow } from "../utility/dateNow.js";
 
@@ -59,14 +66,15 @@ export const signup = async (req, res) => {
     });
 
     if (newUser) {
-      // Generate JWT token
-      const token = generateToken(newUser._id);
       await newUser.save();
 
       // Update the friend's friendList with the new user's _id
       await User.findByIdAndUpdate(friend._id, {
         $push: { friendList: newUser._id },
       });
+
+      const token = generateAccessToken(newUser._id);
+      const refreshToken = await generateRefreshToken(newUser._id);
 
       console.log("New user signed up:", newUser.username);
 
@@ -78,6 +86,7 @@ export const signup = async (req, res) => {
         email: newUser.email,
         profileImage: newUser.profileImage,
         token,
+        refreshToken,
       });
     }
   } catch (error) {
@@ -114,8 +123,9 @@ export const login = async (req, res) => {
       return res.status(400).json({ error: "Invalid login information" });
     }
 
-    // Generate token
-    const token = generateToken(user._id);
+    // Generate tokens
+    const token = generateAccessToken(user._id);
+    const refreshToken = await generateRefreshToken(user._id);
 
     console.log(`${timeNow}: ${user.username} logged in`);
 
@@ -127,6 +137,7 @@ export const login = async (req, res) => {
       email: user.email,
       profileImage: user.profileImage,
       token,
+      refreshToken,
     });
   } catch (error) {
     console.log("Error during login", error.message);
@@ -135,13 +146,42 @@ export const login = async (req, res) => {
 };
 
 // Logout
-export const logout = (req, res) => {
+export const logout = async (req, res) => {
   try {
+    const { refreshToken } = req.body || {};
+    if (refreshToken) {
+      await revokeRefreshToken(refreshToken);
+    }
     res.cookie("jwt", "", { maxAge: 0 });
     res.status(200).json({ message: "You have logged out" });
   } catch (error) {
     console.log("Error logging out", error.message);
     res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+/////////////////////////////////////////////
+// Exchange a valid refresh token for a new access token, rotating the
+// refresh token itself (sliding 14-day session window)
+/////////////////////////////////////////////
+export const refreshTokens = async (req, res) => {
+  try {
+    const { refreshToken } = req.body || {};
+    if (!refreshToken) {
+      return res.status(400).json({ error: "refreshToken is required" });
+    }
+
+    const result = await rotateRefreshToken(refreshToken);
+    if (!result) {
+      return res.status(401).json({ error: "Invalid or expired refresh token" });
+    }
+
+    const token = generateAccessToken(result.userId);
+
+    res.status(200).json({ token, refreshToken: result.refreshToken });
+  } catch (error) {
+    console.log("Error in refreshTokens controller: ", error.message);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -258,24 +298,53 @@ export const deleteAccount = async (req, res) => {
       }
     );
 
-    // Find messages involving the user and collect imageFiles
-    const messagesToDelete = await Message.find({
+    // Direct conversations are wholly the account's own history -- delete
+    // them outright, same as before.
+    const directConversations = await Conversation.find({
+      type: "direct",
+      "members.userId": userId,
+    });
+    const directConversationIds = directConversations.map((c) => c._id);
+
+    const directMessages = await Message.find({
+      conversationId: { $in: directConversationIds },
+    });
+    const imageFilesToCheck = directMessages.flatMap((m) => m.imageFiles || []);
+
+    await Message.deleteMany({ conversationId: { $in: directConversationIds } });
+    await ConversationReadState.deleteMany({
+      conversationId: { $in: directConversationIds },
+    });
+    await Conversation.deleteMany({ _id: { $in: directConversationIds } });
+
+    // Group conversations: the account leaves, but shared history stays
+    // intact for remaining members (same rule as a normal member removal).
+    const groupConversations = await Conversation.find({
+      type: "group",
+      "members.userId": userId,
+    });
+    await Promise.all(
+      groupConversations.map(async (g) => {
+        const member = g.members.find((m) => m.userId.toString() === userId.toString());
+        if (member) member.leftAt = new Date();
+        await g.save();
+      })
+    );
+    await ConversationReadState.deleteMany({
+      userId,
+      conversationId: { $in: groupConversations.map((g) => g._id) },
+    });
+
+    // Legacy cleanup for any pair not yet migrated to the new model.
+    const legacyMessages = await Message.find({
       $or: [{ senderId: userId }, { receiverId: userId }],
+      conversationId: null,
     });
-
-    const imageFilesToCheck = [];
-    messagesToDelete.forEach((msg) => {
-      if (msg.imageFiles && msg.imageFiles.length > 0) {
-        imageFilesToCheck.push(...msg.imageFiles);
-      }
-    });
-
-    // Delete messages
+    imageFilesToCheck.push(...legacyMessages.flatMap((m) => m.imageFiles || []));
     await Message.deleteMany({
       $or: [{ senderId: userId }, { receiverId: userId }],
+      conversationId: null,
     });
-
-    // Delete conversations
     await UserConversation.deleteMany({
       $or: [{ senderId: userId }, { receiverId: userId }],
     });

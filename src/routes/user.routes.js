@@ -5,6 +5,7 @@ import {
   resizeImage,
 } from "../middleware/uploadProfileImage.js";
 import {
+  getCurrentUser,
   getFriendList,
   getFriendRequests,
   addFriendRequest,
@@ -47,6 +48,7 @@ router.get("/uploads/images/:filename", protectRoute, (req, res) => {
   res.sendFile(filePath);
 });
 
+router.get("/me", protectRoute, getCurrentUser);
 router.get("/friendlist", protectRoute, getFriendList);
 router.get("/friendrequests", protectRoute, getFriendRequests);
 router.put("/addfriend/:uniqueId", protectRoute, addFriendRequest);
