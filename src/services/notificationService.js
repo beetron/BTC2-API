@@ -1,7 +1,7 @@
 import { getMessaging } from "firebase-admin/messaging";
 import "../firebase/firebaseAdmin.js";
 import User from "../models/user.model.js";
-import UserConversation from "../models/userConversation.model.js";
+import ConversationReadState from "../models/conversationReadState.model.js";
 import { ObjectId } from "mongodb";
 
 export const notificationService = async (recipientId, data) => {
@@ -22,9 +22,9 @@ export const notificationService = async (recipientId, data) => {
     const ownerObjectId = new ObjectId(`${recipientId}`);
 
     // aggregate unreadCount across *recipient* conversations
-    const [{ totalUnread = 0 } = {}] = await UserConversation.aggregate([
+    const [{ totalUnread = 0 } = {}] = await ConversationReadState.aggregate([
       {
-        $match: { senderId: ownerObjectId },
+        $match: { userId: ownerObjectId },
       },
       {
         $group: {

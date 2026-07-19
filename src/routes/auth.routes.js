@@ -4,6 +4,7 @@ import {
   login,
   logout,
   signup,
+  refreshTokens,
   forgotUsername,
   forgotPassword,
   deleteAccount,
@@ -13,6 +14,7 @@ const router = express.Router();
 router.post("/signup", signup);
 router.post("/login", login);
 router.post("/logout", logout);
+router.post("/refresh", refreshTokens);
 router.post("/forgotusername", forgotUsername);
 router.post("/forgotpassword", forgotPassword);
 router.delete("/deleteAccount/:userId", protectRoute, deleteAccount);
