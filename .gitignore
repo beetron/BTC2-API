@@ -13,6 +13,9 @@ src/users/messageImage/*
 src/users/profileImage/*
 src/uploads/images/*
 
+# Development scripts
+src/scripts/*
+
 ### Node ###
 # Logs
 logs

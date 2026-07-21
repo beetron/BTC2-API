@@ -1,5 +1,7 @@
 import User from "../models/user.model.js";
 import UserConversation from "../models/userConversation.model.js";
+import Conversation from "../models/conversation.model.js";
+import ConversationReadState from "../models/conversationReadState.model.js";
 import fs from "fs-extra";
 import path from "path";
 import bcrypt from "bcryptjs";
@@ -11,6 +13,23 @@ import Message from "../models/message.model.js";
 // Used for getting the curent directory path regardless of environment
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+/////////////////////////////////////////////
+// Get the requesting user's own profile -- used to rehydrate the client's
+// in-memory auth state on page load (localStorage only persists the auth
+// tokens, not profile fields)
+/////////////////////////////////////////////
+export const getCurrentUser = async (req, res) => {
+  const user = req.user;
+  res.status(200).json({
+    _id: user._id,
+    username: user.username,
+    nickname: user.nickname,
+    uniqueId: user.uniqueId,
+    email: user.email,
+    profileImage: user.profileImage,
+  });
+};
 
 /////////////////////////////////////////////
 // Get user friend list
@@ -34,16 +53,22 @@ export const getFriendList = async (req, res) => {
     // Check for unread message status with each friend
     const friendListWithUnreadStatus = await Promise.all(
       friendListData.map(async (friend) => {
-        // Find conversation where user is the sender and friend is receiver
-        const conversation = await UserConversation.findOne({
-          senderId: user._id,
-          receiverId: friend._id,
-        });
+        const directKey = Conversation.buildDirectKey(user._id, friend._id);
+        const conversation = await Conversation.findOne({ directKey });
+
+        let unreadCount = 0;
+        if (conversation) {
+          const state = await ConversationReadState.findOne({
+            conversationId: conversation._id,
+            userId: user._id,
+          });
+          unreadCount = state ? state.unreadCount : 0;
+        }
 
         return {
           ...friend.toObject(),
-          unreadCount: conversation ? conversation.unreadCount : 0,
-          updatedAt: conversation ? conversation.updatedAt : null,
+          unreadCount,
+          updatedAt: conversation ? conversation.lastMessageAt : null,
         };
       })
     );
@@ -506,41 +531,45 @@ export const blockUser = async (req, res) => {
         $pull: { friendRequests: userId },
       });
 
-      // Delete any user conversations and messages between the two users
-      const conversationA = await UserConversation.findOne({
-        senderId: userId,
-        receiverId: friendToBlock._id,
-      });
-      const conversationB = await UserConversation.findOne({
-        senderId: friendToBlock._id,
-        receiverId: userId,
-      });
+      // Delete the direct conversation and messages between the two users.
+      // Shared group history, if any, is untouched by blocking (see roadmap
+      // decision: blocking only affects the 1:1 thread).
+      const directKey = Conversation.buildDirectKey(userId, friendToBlock._id);
+      const conversation = await Conversation.findOne({ directKey });
 
-      // Collect all message ids referenced in both conversations
-      const allMessageIds = [
-        ...(conversationA?.messages || []),
-        ...(conversationB?.messages || []),
-      ];
-
-      if (allMessageIds.length > 0) {
-        // Find messages and gather image files
+      if (conversation) {
         const messagesToDelete = await Message.find({
-          _id: { $in: allMessageIds },
+          conversationId: conversation._id,
         });
-        const allImageFiles = messagesToDelete.flatMap(
-          (m) => m.imageFiles || []
-        );
+        const allImageFiles = messagesToDelete.flatMap((m) => m.imageFiles || []);
 
-        // Delete Message documents that belong to this pair (safe because conversations are removed)
-        await Message.deleteMany({ _id: { $in: allMessageIds } });
+        await Message.deleteMany({ conversationId: conversation._id });
+        await ConversationReadState.deleteMany({ conversationId: conversation._id });
+        await conversation.deleteOne();
 
-        // Cleanup unreferenced image files
         await handleImageFileCleanup(allImageFiles);
       }
 
-      // Remove conversations for both sides
-      if (conversationA) await conversationA.deleteOne();
-      if (conversationB) await conversationB.deleteOne();
+      // Legacy cleanup for any pair not yet migrated to the new model.
+      const legacyConversationA = await UserConversation.findOne({
+        senderId: userId,
+        receiverId: friendToBlock._id,
+      });
+      const legacyConversationB = await UserConversation.findOne({
+        senderId: friendToBlock._id,
+        receiverId: userId,
+      });
+      const legacyMessageIds = [
+        ...(legacyConversationA?.messages || []),
+        ...(legacyConversationB?.messages || []),
+      ];
+      if (legacyMessageIds.length > 0) {
+        const legacyMessages = await Message.find({ _id: { $in: legacyMessageIds } });
+        await Message.deleteMany({ _id: { $in: legacyMessageIds } });
+        await handleImageFileCleanup(legacyMessages.flatMap((m) => m.imageFiles || []));
+      }
+      if (legacyConversationA) await legacyConversationA.deleteOne();
+      if (legacyConversationB) await legacyConversationB.deleteOne();
 
       console.log(
         `User ${userId} blocked ${friendId} - removed friendship, cleared friend requests and deleted conversations/messages`
@@ -739,7 +768,7 @@ export const updateEmail = async (req, res) => {
 // Register or update FCM token
 /////////////////////////////////////////////
 export const registerFcmToken = async (req, res) => {
-  const { token, device } = req.body;
+  const { token, device, deviceId } = req.body;
 
   console.log("user.controller, registerFcmToken called: ", device);
 
@@ -750,24 +779,35 @@ export const registerFcmToken = async (req, res) => {
 
     const user = await User.findById(req.user._id);
 
-    // Check if token already exists
-    const tokenIndex = user.fcmTokens.findIndex((t) => t.token === token);
+    // Prefer matching by deviceId (stable per physical device/install) so a
+    // rotated FCM token for the same device replaces the old entry instead
+    // of appending a duplicate. Fall back to matching by token value to
+    // cover clients that don't send deviceId yet, and to self-heal a
+    // pre-existing token-only entry the first time an upgraded client sends
+    // its deviceId for it.
+    let entryIndex = deviceId
+      ? user.fcmTokens.findIndex((t) => t.deviceId === deviceId)
+      : -1;
+    if (entryIndex === -1) {
+      entryIndex = user.fcmTokens.findIndex((t) => t.token === token);
+    }
 
-    if (tokenIndex !== -1) {
-      // Update existing token to update timestamp
-      user.fcmTokens[tokenIndex] = {
+    if (entryIndex !== -1) {
+      // Update existing entry to update timestamp
+      user.fcmTokens[entryIndex] = {
         token,
-        device: device || user.fcmTokens[tokenIndex].device,
+        device: device || user.fcmTokens[entryIndex].device,
+        deviceId: deviceId || user.fcmTokens[entryIndex].deviceId,
       };
     } else {
-      // Add new token
-      user.fcmTokens.push({ token, device: device || "unknown" });
+      // Add new entry
+      user.fcmTokens.push({ token, device: device || "unknown", deviceId });
     }
 
     await user.save();
 
     return res.status(200).json({
-      message: tokenIndex !== -1 ? "FCM token updated" : "FCM token registered",
+      message: entryIndex !== -1 ? "FCM token updated" : "FCM token registered",
     });
   } catch (error) {
     console.log("Error in registering FCM token: ", error.message);

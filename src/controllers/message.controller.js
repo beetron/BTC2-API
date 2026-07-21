@@ -1,9 +1,14 @@
 import User from "../models/user.model.js";
 import Message from "../models/message.model.js";
-import UserConversation from "../models/userConversation.model.js";
+import Conversation from "../models/conversation.model.js";
+import {
+  findOrCreateDirectConversation,
+  postMessage as postConversationMessage,
+  getDirectConversationMessagesLegacy,
+  clearHistoryUpTo,
+} from "../services/conversationService.js";
 import { getReceiverSocketIds, io } from "../socket/socket.js";
 import { notificationService } from "../services/notificationService.js";
-import { handleImageFileCleanup } from "../utility/imageCleanup.js";
 import fs from 'fs';
 import path from 'path';
 
@@ -16,50 +21,12 @@ export const sendMessage = async (req, res) => {
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
 
-    // Create new message
-    const newMessage = await Message.create({
+    const conversation = await findOrCreateDirectConversation(senderId, receiverId);
+    const { message: newMessage } = await postConversationMessage({
+      conversationId: conversation._id,
       senderId,
-      receiverId,
       message,
     });
-
-    // Update or create new UserConversation for sender
-    let senderConversation = await UserConversation.findOne({
-      senderId,
-      receiverId,
-    });
-
-    if (!senderConversation) {
-      senderConversation = await UserConversation.create({
-        senderId,
-        receiverId,
-        messages: [newMessage._id],
-        lastReadMessageId: newMessage._id, // Marks read for sender
-      });
-    } else {
-      senderConversation.messages.push(newMessage._id);
-      senderConversation.lastReadMessageId = newMessage._id;
-      await senderConversation.save();
-    }
-
-    // Update or create UserConversation for receiver
-    let receiverConversation = await UserConversation.findOne({
-      senderId: receiverId,
-      receiverId: senderId,
-    });
-
-    if (!receiverConversation) {
-      receiverConversation = await UserConversation.create({
-        senderId: receiverId,
-        receiverId: senderId,
-        messages: [newMessage._id],
-        unreadCount: 1, // Unread for receiver
-      });
-    } else {
-      receiverConversation.messages.push(newMessage._id);
-      receiverConversation.unreadCount += 1;
-      await receiverConversation.save();
-    }
 
     // Send socket notification to all connected devices of receiver
     const receiverSocketIds = getReceiverSocketIds(receiverId);
@@ -105,17 +72,18 @@ export const getMessages = async (req, res) => {
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
 
-    let conversation = await UserConversation.findOne({
-      senderId,
-      receiverId,
-    });
+    const directKey = Conversation.buildDirectKey(senderId, receiverId);
+    const conversation = await Conversation.findOne({ directKey });
 
     if (!conversation) {
       return res.status(200).json([]);
     }
 
-    // UserConversation.getMessages() will update lastReadMessageId and unreadCount
-    const messages = await conversation.getMessages();
+    // Marks read and caps at the 200 most recent messages, same as before.
+    const messages = await getDirectConversationMessagesLegacy(
+      conversation._id,
+      senderId
+    );
     res.status(200).json(messages);
   } catch (error) {
     console.log("Error in getMessages controller: ", error.message);
@@ -131,35 +99,17 @@ export const deleteMessages = async (req, res) => {
     const { id: messageId } = req.params;
     const userId = req.user._id;
 
-    // Gather message details
     const message = await Message.findById(messageId);
-    if (!message) {
+    if (!message || !message.conversationId) {
       return res.status(404).json({ error: "Message not found" });
     }
 
-    // Find and update user's conversation
-    const conversation = await UserConversation.findOne({
-      senderId: userId,
-      receiverId: userId.equals(message.senderId)
-        ? message.receiverId
-        : message.senderId,
+    await clearHistoryUpTo({
+      conversationId: message.conversationId,
+      userId,
+      messageId,
     });
 
-    if (!conversation) {
-      return res.status(404).json({ error: "Conversation not found" });
-    }
-
-    // Collect all image files from messages to be deleted
-    const messageIndex = conversation.messages.indexOf(messageId);
-    const messagesToRemoveIds = conversation.messages.slice(0, messageIndex + 1);
-    const messagesToDelete = await Message.find({ _id: { $in: messagesToRemoveIds } });
-    const allImageFiles = messagesToDelete.flatMap(msg => msg.imageFiles);
-
-    await conversation.deleteMessagesUpTo(messageId);
-    
-    // Cleanup unreferenced image files
-    await handleImageFileCleanup(allImageFiles);
-    
     res.status(200).json({ message: "Messages deleted successfully" });
   } catch (error) {
     console.log("Error in deleteMessages controller: ", error.message);
@@ -183,50 +133,12 @@ export const uploadImages = async (req, res) => {
     // Use only filenames (no path prefix)
     const imageFiles = req.filenames;
 
-    // Create new message with only imageFiles
-    const newMessage = await Message.create({
+    const conversation = await findOrCreateDirectConversation(senderId, receiverId);
+    const { message: newMessage } = await postConversationMessage({
+      conversationId: conversation._id,
       senderId,
-      receiverId,
       imageFiles,
     });
-
-    // Update or create new UserConversation for sender
-    let senderConversation = await UserConversation.findOne({
-      senderId,
-      receiverId,
-    });
-
-    if (!senderConversation) {
-      senderConversation = await UserConversation.create({
-        senderId,
-        receiverId,
-        messages: [newMessage._id],
-        lastReadMessageId: newMessage._id, // Marks read for sender
-      });
-    } else {
-      senderConversation.messages.push(newMessage._id);
-      senderConversation.lastReadMessageId = newMessage._id;
-      await senderConversation.save();
-    }
-
-    // Update or create UserConversation for receiver
-    let receiverConversation = await UserConversation.findOne({
-      senderId: receiverId,
-      receiverId: senderId,
-    });
-
-    if (!receiverConversation) {
-      receiverConversation = await UserConversation.create({
-        senderId: receiverId,
-        receiverId: senderId,
-        messages: [newMessage._id],
-        unreadCount: 1, // Unread for receiver
-      });
-    } else {
-      receiverConversation.messages.push(newMessage._id);
-      receiverConversation.unreadCount += 1;
-      await receiverConversation.save();
-    }
 
     // Send socket notification to all connected devices of receiver
     const receiverSocketIds = getReceiverSocketIds(receiverId);
