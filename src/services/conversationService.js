@@ -387,8 +387,8 @@ export const removeMember = async ({ conversationId, actorId, targetUserId }) =>
   const isSelf = actorId.toString() === targetUserId.toString();
   if (!isSelf) {
     const actorRole = conversation.getMemberRole(actorId);
-    if (actorRole !== "owner" && actorRole !== "admin") {
-      throw new Error("Only an owner or admin can remove other members");
+    if (actorRole !== "owner") {
+      throw new Error("Only the owner can remove other members");
     }
   }
 
@@ -397,12 +397,46 @@ export const removeMember = async ({ conversationId, actorId, targetUserId }) =>
   );
   if (!target) throw new Error("Member not found in this conversation");
 
+  const wasOwner = target.role === "owner";
   target.leftAt = new Date();
-  await conversation.save();
 
+  const remainingActive = conversation.members.filter(
+    (m) => !m.leftAt && m.userId.toString() !== targetUserId.toString()
+  );
+
+  // Owner succession: promote the longest-tenured remaining member so a
+  // group never silently ends up with nobody able to rename it / remove
+  // members.
+  if (wasOwner && remainingActive.length > 0) {
+    const byJoinedAt = (a, b) => new Date(a.joinedAt) - new Date(b.joinedAt);
+    const successor = [...remainingActive].sort(byJoinedAt)[0];
+    successor.role = "owner";
+  }
+
+  await conversation.save();
   await ConversationReadState.deleteOne({ conversationId, userId: targetUserId });
 
-  return conversation;
+  // Dissolve the group once nobody is left in it -- mirrors the direct-chat
+  // cascade-delete in clearHistoryUpTo, just triggered by emptiness here
+  // instead of both sides clearing history.
+  let conversationDeleted = false;
+  if (remainingActive.length === 0) {
+    const messages = await Message.find({ conversationId });
+    const candidateImageFiles = messages.flatMap((m) => m.imageFiles);
+
+    console.log(
+      `Group conversation ${conversationId} has no members left -- deleting conversation, ${messages.length} message(s), and read-state rows.`
+    );
+
+    await Message.deleteMany({ conversationId });
+    await ConversationReadState.deleteMany({ conversationId });
+    await Conversation.deleteOne({ _id: conversationId });
+    conversationDeleted = true;
+
+    await handleImageFileCleanup(candidateImageFiles);
+  }
+
+  return { conversation, conversationDeleted };
 };
 
 export const renameGroup = async ({ conversationId, actorId, name, avatar }) => {
@@ -411,8 +445,8 @@ export const renameGroup = async ({ conversationId, actorId, name, avatar }) => 
   if (conversation.type !== "group") throw new Error("Not a group conversation");
 
   const role = conversation.getMemberRole(actorId);
-  if (role !== "owner" && role !== "admin") {
-    throw new Error("Only an owner or admin can update this group");
+  if (role !== "owner") {
+    throw new Error("Only the owner can update this group");
   }
 
   if (name !== undefined) conversation.name = name;
