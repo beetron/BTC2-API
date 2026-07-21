@@ -258,7 +258,7 @@ export const removeMember = async (req, res) => {
   try {
     const { id: conversationId, userId: targetUserId } = req.params;
 
-    const conversation = await conversationService.removeMember({
+    const { conversation, conversationDeleted } = await conversationService.removeMember({
       conversationId,
       actorId: req.user._id,
       targetUserId,
@@ -267,12 +267,15 @@ export const removeMember = async (req, res) => {
     getReceiverSocketIds(targetUserId).forEach((socketId) => {
       io.sockets.sockets.get(socketId)?.leave(conversationId);
     });
+    // conversationDeleted only ever happens when targetUserId was the last
+    // active member -- their own sockets just left the room above, so
+    // there's nobody else left in it to notify.
     io.to(conversationId).emit("conversation:memberRemoved", {
       conversationId,
       userId: targetUserId,
     });
 
-    res.status(200).json(conversation);
+    res.status(200).json({ ...conversation.toObject(), conversationDeleted });
   } catch (error) {
     console.log("Error in removeMember controller: ", error.message);
     res.status(400).json({ error: error.message });
