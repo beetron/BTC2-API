@@ -768,7 +768,7 @@ export const updateEmail = async (req, res) => {
 // Register or update FCM token
 /////////////////////////////////////////////
 export const registerFcmToken = async (req, res) => {
-  const { token, device } = req.body;
+  const { token, device, deviceId } = req.body;
 
   console.log("user.controller, registerFcmToken called: ", device);
 
@@ -779,24 +779,35 @@ export const registerFcmToken = async (req, res) => {
 
     const user = await User.findById(req.user._id);
 
-    // Check if token already exists
-    const tokenIndex = user.fcmTokens.findIndex((t) => t.token === token);
+    // Prefer matching by deviceId (stable per physical device/install) so a
+    // rotated FCM token for the same device replaces the old entry instead
+    // of appending a duplicate. Fall back to matching by token value to
+    // cover clients that don't send deviceId yet, and to self-heal a
+    // pre-existing token-only entry the first time an upgraded client sends
+    // its deviceId for it.
+    let entryIndex = deviceId
+      ? user.fcmTokens.findIndex((t) => t.deviceId === deviceId)
+      : -1;
+    if (entryIndex === -1) {
+      entryIndex = user.fcmTokens.findIndex((t) => t.token === token);
+    }
 
-    if (tokenIndex !== -1) {
-      // Update existing token to update timestamp
-      user.fcmTokens[tokenIndex] = {
+    if (entryIndex !== -1) {
+      // Update existing entry to update timestamp
+      user.fcmTokens[entryIndex] = {
         token,
-        device: device || user.fcmTokens[tokenIndex].device,
+        device: device || user.fcmTokens[entryIndex].device,
+        deviceId: deviceId || user.fcmTokens[entryIndex].deviceId,
       };
     } else {
-      // Add new token
-      user.fcmTokens.push({ token, device: device || "unknown" });
+      // Add new entry
+      user.fcmTokens.push({ token, device: device || "unknown", deviceId });
     }
 
     await user.save();
 
     return res.status(200).json({
-      message: tokenIndex !== -1 ? "FCM token updated" : "FCM token registered",
+      message: entryIndex !== -1 ? "FCM token updated" : "FCM token registered",
     });
   } catch (error) {
     console.log("Error in registering FCM token: ", error.message);

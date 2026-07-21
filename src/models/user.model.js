@@ -5,6 +5,11 @@ const fcmTokenSchema = new mongoose.Schema(
   {
     token: String,
     device: String,
+    // Stable per-install identifier sent by newer clients so a rotated FCM
+    // token for the same physical device replaces the old entry instead of
+    // appending a duplicate. Optional for backward compatibility with
+    // clients that don't send it yet.
+    deviceId: String,
   },
   { timestamps: true }
 );
