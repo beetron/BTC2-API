@@ -236,35 +236,58 @@ export const listConversations = async (userId) => {
   });
   const active = conversations.filter((c) => c.isActiveMember(userId));
 
-  return Promise.all(
-    active.map(async (c) => {
-      const state = await getOrCreateReadState(c._id, userId);
-      let name = c.name;
-      let avatar = c.avatar;
-      let partnerId = null;
+  if (active.length === 0) return [];
 
-      if (c.type === "direct") {
-        const other = c.members.find((m) => m.userId.toString() !== userId.toString());
-        const partner = other ? await User.findById(other.userId).select(
-          "nickname username profileImage uniqueId"
-        ) : null;
-        name = partner?.nickname || partner?.username || null;
-        avatar = partner?.profileImage || null;
-        partnerId = other ? other.userId : null;
-      }
+  // Batch both per-conversation lookups below into one query each instead
+  // of one (or two) queries per conversation -- unreadCount doesn't need
+  // getOrCreateReadState's create-if-missing here since it's read-only;
+  // any conversation without a read state yet just reads as unreadCount 0,
+  // and a real row gets created the moment postMessage/clearHistoryUpTo
+  // actually needs to mutate one.
+  const partnerIds = active
+    .filter((c) => c.type === "direct")
+    .map((c) => c.members.find((m) => m.userId.toString() !== userId.toString())?.userId)
+    .filter(Boolean);
 
-      return {
-        conversationId: c._id,
-        type: c.type,
-        name,
-        avatar,
-        partnerId,
-        memberCount: c.members.filter((m) => !m.leftAt).length,
-        lastMessageAt: c.lastMessageAt,
-        unreadCount: state.unreadCount,
-      };
-    })
+  const [readStates, partners] = await Promise.all([
+    ConversationReadState.find({
+      conversationId: { $in: active.map((c) => c._id) },
+      userId,
+    }),
+    User.find({ _id: { $in: partnerIds } }).select(
+      "nickname username profileImage uniqueId"
+    ),
+  ]);
+
+  const unreadByConversationId = new Map(
+    readStates.map((s) => [s.conversationId.toString(), s.unreadCount])
   );
+  const partnerById = new Map(partners.map((p) => [p._id.toString(), p]));
+
+  return active.map((c) => {
+    let name = c.name;
+    let avatar = c.avatar;
+    let partnerId = null;
+
+    if (c.type === "direct") {
+      const other = c.members.find((m) => m.userId.toString() !== userId.toString());
+      const partner = other ? partnerById.get(other.userId.toString()) : null;
+      name = partner?.nickname || partner?.username || null;
+      avatar = partner?.profileImage || null;
+      partnerId = other ? other.userId : null;
+    }
+
+    return {
+      conversationId: c._id,
+      type: c.type,
+      name,
+      avatar,
+      partnerId,
+      memberCount: c.members.filter((m) => !m.leftAt).length,
+      lastMessageAt: c.lastMessageAt,
+      unreadCount: unreadByConversationId.get(c._id.toString()) || 0,
+    };
+  });
 };
 
 // Full detail for one conversation, with member profiles resolved -- used

@@ -50,28 +50,38 @@ export const getFriendList = async (req, res) => {
       _id: { $in: friendList },
     }).select("nickname profileImage uniqueId");
 
-    // Check for unread message status with each friend
-    const friendListWithUnreadStatus = await Promise.all(
-      friendListData.map(async (friend) => {
-        const directKey = Conversation.buildDirectKey(user._id, friend._id);
-        const conversation = await Conversation.findOne({ directKey });
-
-        let unreadCount = 0;
-        if (conversation) {
-          const state = await ConversationReadState.findOne({
-            conversationId: conversation._id,
-            userId: user._id,
-          });
-          unreadCount = state ? state.unreadCount : 0;
-        }
-
-        return {
-          ...friend.toObject(),
-          unreadCount,
-          updatedAt: conversation ? conversation.lastMessageAt : null,
-        };
-      })
+    // Batch both per-friend lookups below into one query each instead of
+    // one query per friend (2N round trips -> 2 total), same result shape.
+    const directKeys = friendListData.map((friend) =>
+      Conversation.buildDirectKey(user._id, friend._id)
     );
+    const conversations = await Conversation.find({
+      directKey: { $in: directKeys },
+    });
+    const conversationByKey = new Map(
+      conversations.map((c) => [c.directKey, c])
+    );
+
+    const readStates = await ConversationReadState.find({
+      conversationId: { $in: conversations.map((c) => c._id) },
+      userId: user._id,
+    });
+    const unreadByConversationId = new Map(
+      readStates.map((s) => [s.conversationId.toString(), s.unreadCount])
+    );
+
+    const friendListWithUnreadStatus = friendListData.map((friend) => {
+      const directKey = Conversation.buildDirectKey(user._id, friend._id);
+      const conversation = conversationByKey.get(directKey);
+
+      return {
+        ...friend.toObject(),
+        unreadCount: conversation
+          ? unreadByConversationId.get(conversation._id.toString()) || 0
+          : 0,
+        updatedAt: conversation ? conversation.lastMessageAt : null,
+      };
+    });
 
     // Sort by most recent conversation and unread messages first
     const sortedFriendList = friendListWithUnreadStatus.sort((a, b) => {
