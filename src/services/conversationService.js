@@ -299,8 +299,9 @@ export const getConversationDetail = async (conversationId, userId) => {
   );
   if (!conversation) throw new Error("Conversation not found");
 
+  // m.userId is null when that member's account no longer exists
   const isActive = conversation.members.some(
-    (m) => m.userId._id.toString() === userId.toString() && !m.leftAt
+    (m) => m.userId && m.userId._id.toString() === userId.toString() && !m.leftAt
   );
   if (!isActive) throw new Error("Not a member of this conversation");
 

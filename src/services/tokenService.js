@@ -46,7 +46,11 @@ export const rotateRefreshToken = async (token) => {
   if (existing.expiresAt < new Date()) return null;
 
   const refreshToken = await generateRefreshToken(existing.userId);
-  return { userId: existing.userId, refreshToken };
+  return {
+    userId: existing.userId,
+    refreshToken,
+    issuedAt: existing.createdAt,
+  };
 };
 
 /////////////////////////////////////////////
@@ -54,4 +58,11 @@ export const rotateRefreshToken = async (token) => {
 /////////////////////////////////////////////
 export const revokeRefreshToken = async (token) => {
   await RefreshToken.deleteOne({ tokenHash: hashToken(token) });
+};
+
+/////////////////////////////////////////////
+// Revoke every refresh token a user holds (all devices)
+/////////////////////////////////////////////
+export const revokeAllRefreshTokens = async (userId) => {
+  await RefreshToken.deleteMany({ userId });
 };

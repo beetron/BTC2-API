@@ -13,6 +13,7 @@ import messageRoutes from "./src/routes/messages.routes.js";
 import userRoutes from "./src/routes/user.routes.js";
 import conversationRoutes from "./src/routes/conversation.routes.js";
 import linkPreviewRoutes from "./src/routes/linkPreview.routes.js";
+import adminRoutes from "./src/routes/admin.routes.js";
 import connectToMongoDB from "./src/db/connectToMongoDB.js";
 import { app, server } from "./src/socket/socket.js";
 import { metricsMiddleware } from "./src/middleware/metricsMiddleware.js";
@@ -36,6 +37,24 @@ const corsOptions = {
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
+
+// How many reverse proxies sit in front of the API (Kubernetes ingress = 1).
+// Rate limits key on the client IP that Express derives from this, so it
+// must match the real deployment: too low and every user shares the
+// ingress's IP, too high and clients can spoof X-Forwarded-For.
+// Accepts a hop count, true/false, or an Express trust-proxy subnet list.
+const parseTrustProxy = (value) => {
+  if (value === undefined || value.trim() === "") return 1;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  const hops = Number(value);
+  return Number.isInteger(hops) ? hops : value;
+};
+app.set("trust proxy", parseTrustProxy(process.env.TRUST_PROXY));
+
+if (!process.env.ADMIN_USER_ID) {
+  console.log("ADMIN_USER_ID is not set, admin endpoints are disabled");
+}
 
 // Middleware to parse JSON bodies
 app.use(cors(corsOptions));
@@ -65,6 +84,7 @@ app.use(`/messages`, messageRoutes);
 app.use(`/users`, userRoutes);
 app.use(`/conversations`, conversationRoutes);
 app.use(`/link-preview`, linkPreviewRoutes);
+app.use(`/admin`, adminRoutes);
 
 await connectToMongoDB();
 

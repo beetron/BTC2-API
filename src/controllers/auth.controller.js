@@ -7,12 +7,10 @@ import {
   revokeRefreshToken,
 } from "../services/tokenService.js";
 import { sendEmail } from "../utility/sendEmail.js";
-import UserConversation from "../models/userConversation.model.js";
-import Message from "../models/message.model.js";
-import Conversation from "../models/conversation.model.js";
-import ConversationReadState from "../models/conversationReadState.model.js";
-import { handleImageFileCleanup } from "../utility/imageCleanup.js";
 import { dateNow } from "../utility/dateNow.js";
+import { isRefreshTokenRevoked } from "../utility/sessionRevocation.js";
+import { deleteUserAccount } from "../services/userDeletionService.js";
+import { createUserWithFriend } from "../services/userCreationService.js";
 
 /////////////////////////////////////////////
 // Signup (signup assigns username as the default uniqueId)
@@ -52,27 +50,15 @@ export const signup = async (req, res) => {
       return res.status(400).json({ error: "Email address is already in use" });
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // New user object with existing friend added to friendList
-    const newUser = new User({
+    // Create the account already friends with the inviter
+    const newUser = await createUserWithFriend({
       username: usernameLowerCase,
-      password: hashedPassword,
-      email: email,
-      profileImage: "",
-      friendList: [friend._id],
+      email,
+      password,
+      friendId: friend._id,
     });
 
     if (newUser) {
-      await newUser.save();
-
-      // Update the friend's friendList with the new user's _id
-      await User.findByIdAndUpdate(friend._id, {
-        $push: { friendList: newUser._id },
-      });
-
       const token = generateAccessToken(newUser._id);
       const refreshToken = await generateRefreshToken(newUser._id);
 
@@ -176,6 +162,16 @@ export const refreshTokens = async (req, res) => {
       return res.status(401).json({ error: "Invalid or expired refresh token" });
     }
 
+    // The token row alone isn't proof the session is still wanted: the
+    // account may have been deleted, or signed out by an admin while this
+    // refresh was in flight. Checked after rotating so a revocation that
+    // lands mid-refresh still deletes the newly issued token.
+    const user = await User.findById(result.userId).select("_id sessionsRevokedAt");
+    if (!user || isRefreshTokenRevoked(user, result.issuedAt)) {
+      await revokeRefreshToken(result.refreshToken);
+      return res.status(401).json({ error: "Invalid or expired refresh token" });
+    }
+
     const token = generateAccessToken(result.userId);
 
     res.status(200).json({ token, refreshToken: result.refreshToken });
@@ -274,86 +270,10 @@ export const deleteAccount = async (req, res) => {
         .json({ error: "Unauthorized: You can only delete your own account" });
     }
 
-    // Check if user exists
-    const user = await User.findById(userId);
-    if (!user) {
+    const deleted = await deleteUserAccount(userId);
+    if (!deleted) {
       return res.status(404).json({ error: "User not found" });
     }
-
-    // Remove userId from friendList, friendRequests, and blockedUsers
-    await User.updateMany(
-      {
-        $or: [
-          { friendList: userId },
-          { friendRequests: userId },
-          { blockedUsers: userId },
-        ],
-      },
-      {
-        $pull: {
-          friendList: userId,
-          friendRequests: userId,
-          blockedUsers: userId,
-        },
-      }
-    );
-
-    // Direct conversations are wholly the account's own history -- delete
-    // them outright, same as before.
-    const directConversations = await Conversation.find({
-      type: "direct",
-      "members.userId": userId,
-    });
-    const directConversationIds = directConversations.map((c) => c._id);
-
-    const directMessages = await Message.find({
-      conversationId: { $in: directConversationIds },
-    });
-    const imageFilesToCheck = directMessages.flatMap((m) => m.imageFiles || []);
-
-    await Message.deleteMany({ conversationId: { $in: directConversationIds } });
-    await ConversationReadState.deleteMany({
-      conversationId: { $in: directConversationIds },
-    });
-    await Conversation.deleteMany({ _id: { $in: directConversationIds } });
-
-    // Group conversations: the account leaves, but shared history stays
-    // intact for remaining members (same rule as a normal member removal).
-    const groupConversations = await Conversation.find({
-      type: "group",
-      "members.userId": userId,
-    });
-    await Promise.all(
-      groupConversations.map(async (g) => {
-        const member = g.members.find((m) => m.userId.toString() === userId.toString());
-        if (member) member.leftAt = new Date();
-        await g.save();
-      })
-    );
-    await ConversationReadState.deleteMany({
-      userId,
-      conversationId: { $in: groupConversations.map((g) => g._id) },
-    });
-
-    // Legacy cleanup for any pair not yet migrated to the new model.
-    const legacyMessages = await Message.find({
-      $or: [{ senderId: userId }, { receiverId: userId }],
-      conversationId: null,
-    });
-    imageFilesToCheck.push(...legacyMessages.flatMap((m) => m.imageFiles || []));
-    await Message.deleteMany({
-      $or: [{ senderId: userId }, { receiverId: userId }],
-      conversationId: null,
-    });
-    await UserConversation.deleteMany({
-      $or: [{ senderId: userId }, { receiverId: userId }],
-    });
-
-    // Cleanup unreferenced image files
-    await handleImageFileCleanup(imageFilesToCheck);
-
-    // Delete the user
-    await User.findByIdAndDelete(userId);
 
     res.status(200).json({ message: "Account deleted successfully" });
   } catch (error) {

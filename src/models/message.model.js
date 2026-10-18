@@ -31,6 +31,8 @@ const messageSchema = new mongoose.Schema(
 );
 
 messageSchema.index({ conversationId: 1, createdAt: -1, _id: -1 });
+// Lets admin purges find every message a user sent without a collection scan
+messageSchema.index({ senderId: 1 });
 
 const Message = mongoose.model("Message", messageSchema);
 export default Message;
