@@ -4,6 +4,7 @@ import requireAdmin from "../middleware/requireAdmin.js";
 import { adminLimiter } from "../middleware/rateLimit.js";
 import {
   listUsers,
+  createUser,
   getUser,
   updateUser,
   deleteUserMessages,
@@ -16,6 +17,7 @@ const router = express.Router();
 router.use(adminLimiter, protectRoute, requireAdmin);
 
 router.get("/users", listUsers);
+router.post("/users", createUser);
 router.get("/users/:id", getUser);
 router.patch("/users/:id", updateUser);
 router.delete("/users/:id/messages", deleteUserMessages);

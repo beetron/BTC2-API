@@ -133,6 +133,7 @@ NODE_ENV=development  # for development
 - Account deletion cascades: direct conversations are deleted outright; group conversations are left through the normal leave rules (owner succession, empty groups dissolve), so remaining members keep their history. Self-delete and admin delete share `services/userDeletionService.js`.
 - **Admin** (`/admin/*`, only for the account in `ADMIN_USER_ID`, rate limited):
   - `GET /admin/users?q=&cursor=&limit=` list/search users (prefix match on username, uniqueId, email)
+  - `POST /admin/users` create a user directly (no invite step); they start out friends with the admin. `username` and `password` are required; `uniqueId` and `nickname` default to the username, and a blank `email` becomes `<username>@users.invalid`
   - `GET /admin/users/:id` user detail with message, group, and session counts
   - `PATCH /admin/users/:id` edit `username`, `email`, `uniqueId`, `password`; any change signs the user out on every device
   - `DELETE /admin/users/:id/messages` delete every message the user sent (direct and group); everyone else's messages stay

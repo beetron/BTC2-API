@@ -10,6 +10,7 @@ import { sendEmail } from "../utility/sendEmail.js";
 import { dateNow } from "../utility/dateNow.js";
 import { isRefreshTokenRevoked } from "../utility/sessionRevocation.js";
 import { deleteUserAccount } from "../services/userDeletionService.js";
+import { createUserWithFriend } from "../services/userCreationService.js";
 
 /////////////////////////////////////////////
 // Signup (signup assigns username as the default uniqueId)
@@ -49,27 +50,15 @@ export const signup = async (req, res) => {
       return res.status(400).json({ error: "Email address is already in use" });
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // New user object with existing friend added to friendList
-    const newUser = new User({
+    // Create the account already friends with the inviter
+    const newUser = await createUserWithFriend({
       username: usernameLowerCase,
-      password: hashedPassword,
-      email: email,
-      profileImage: "",
-      friendList: [friend._id],
+      email,
+      password,
+      friendId: friend._id,
     });
 
     if (newUser) {
-      await newUser.save();
-
-      // Update the friend's friendList with the new user's _id
-      await User.findByIdAndUpdate(friend._id, {
-        $push: { friendList: newUser._id },
-      });
-
       const token = generateAccessToken(newUser._id);
       const refreshToken = await generateRefreshToken(newUser._id);
 

@@ -10,6 +10,7 @@ import {
   notifyConversationsChanged,
 } from "../services/messagePurgeService.js";
 import { deleteUserAccount } from "../services/userDeletionService.js";
+import { createUserWithFriend } from "../services/userCreationService.js";
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
@@ -49,6 +50,99 @@ const findTargetUser = async (req, res, select) => {
     return null;
   }
   return user;
+};
+
+// Used when an admin-created account is given no email. The .invalid TLD is
+// reserved (RFC 2606) and can never receive mail, so recovery emails for
+// test accounts go nowhere.
+const PLACEHOLDER_EMAIL_DOMAIN = "users.invalid";
+
+/////////////////////////////////////////////
+// Create an account directly, skipping signup's invite step. The new user
+// starts out friends with the admin, the same way signup befriends the
+// inviter. No session is created for them; they log in themselves.
+/////////////////////////////////////////////
+export const createUser = async (req, res) => {
+  try {
+    const { username, password, email, uniqueId, nickname } = req.body || {};
+
+    for (const [label, value] of [
+      ["Username", username],
+      ["Password", password],
+      ["Email", email],
+      ["Unique ID", uniqueId],
+      ["Nickname", nickname],
+    ]) {
+      if (value !== undefined && value !== null && typeof value !== "string") {
+        return res.status(400).json({ error: `${label} must be text` });
+      }
+    }
+
+    const usernameValue = (username || "").trim().toLowerCase();
+    if (usernameValue.length < 6 || usernameValue.length > 20) {
+      return res.status(400).json({ error: "Username must be 6 to 20 characters" });
+    }
+
+    // bcrypt silently ignores anything past 72 bytes
+    if (!password || password.length < 6 || Buffer.byteLength(password, "utf8") > 72) {
+      return res.status(400).json({ error: "Password must be 6 to 72 characters" });
+    }
+
+    const uniqueIdValue = (uniqueId || "").trim() || usernameValue;
+    if (uniqueIdValue.length < 6 || uniqueIdValue.length > 20) {
+      return res.status(400).json({ error: "Unique ID must be 6 to 20 characters" });
+    }
+
+    const nicknameValue = (nickname || "").trim() || usernameValue;
+    if (nicknameValue.length > 20) {
+      return res.status(400).json({ error: "Nickname must be 20 characters or less" });
+    }
+
+    const emailValue =
+      (email || "").trim() || `${usernameValue}@${PLACEHOLDER_EMAIL_DOMAIN}`;
+    if (emailValue.length > 254 || !EMAIL_PATTERN.test(emailValue)) {
+      return res.status(400).json({ error: "Email address is invalid" });
+    }
+
+    // Same rule as signup: a new username can't match anyone's username or
+    // uniqueId, since uniqueId defaults to the username
+    const [usernameTaken, uniqueIdTaken, emailTaken] = await Promise.all([
+      User.exists({ $or: [{ username: usernameValue }, { uniqueId: usernameValue }] }),
+      uniqueIdValue !== usernameValue ? User.exists({ uniqueId: uniqueIdValue }) : null,
+      User.exists({ email: emailValue }),
+    ]);
+    if (usernameTaken) return res.status(409).json({ error: "Username is taken" });
+    if (uniqueIdTaken) return res.status(409).json({ error: "Unique ID is taken" });
+    if (emailTaken) return res.status(409).json({ error: "Email address is already in use" });
+
+    let user;
+    try {
+      user = await createUserWithFriend({
+        username: usernameValue,
+        email: emailValue,
+        password,
+        friendId: req.user._id,
+        uniqueId: uniqueIdValue,
+        nickname: nicknameValue,
+      });
+    } catch (error) {
+      // Lost a race with another write claiming the same value
+      if (error.code === 11000) {
+        return res.status(409).json({ error: "That value was just taken, try another" });
+      }
+      if (error.name === "ValidationError") {
+        return res.status(400).json({ error: error.message });
+      }
+      throw error;
+    }
+
+    console.log(`Admin ${req.user.username} created user ${user._id} (${user.username})`);
+
+    res.status(201).json({ user: toSummary(user) });
+  } catch (error) {
+    console.log("Error in admin createUser controller: ", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
 };
 
 /////////////////////////////////////////////
