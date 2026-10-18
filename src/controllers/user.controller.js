@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import { sendEmail } from "../utility/sendEmail.js";
 import { handleImageFileCleanup } from "../utility/imageCleanup.js";
 import Message from "../models/message.model.js";
+import { isAdminUser } from "../middleware/requireAdmin.js";
 
 // Used for getting the curent directory path regardless of environment
 const __filename = fileURLToPath(import.meta.url);
@@ -28,6 +29,9 @@ export const getCurrentUser = async (req, res) => {
     uniqueId: user.uniqueId,
     email: user.email,
     profileImage: user.profileImage,
+    // Additive field: tells btc2-web whether to show the admin area.
+    // Older clients ignore it.
+    isAdmin: isAdminUser(user),
   });
 };
 

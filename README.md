@@ -109,6 +109,15 @@ METRICS_PORT=9090             # port for Prometheus metrics endpoint (default: 9
 # migration, not a permanent runtime setting.
 SOCKET_REQUIRE_AUTH=false
 
+# Admin account: the Mongo _id of the one user allowed to call /admin/*.
+# Unset = admin endpoints disabled.
+ADMIN_USER_ID=
+
+# Number of reverse proxies in front of the API, used to find the real
+# client IP for rate limiting. 1 (default) for the Kubernetes ingress;
+# false if clients connect to the API directly.
+TRUST_PROXY=1
+
 # Node environment
 NODE_ENV=production   # for production
 FIREBASE_KEY # for production - fcm key json
@@ -121,7 +130,14 @@ NODE_ENV=development  # for development
 - Profile images are stored in `/src/uploads/images` via `multer` + `sharp`; message/conversation images share the same storage with automatic cleanup once no message references them.
 - Push notifications (Firebase) are only sent to a recipient with no active socket connection — connected clients get the update over Socket.IO instead.
 - User reports are emailed to administrators for moderation.
-- Account deletion cascades: direct conversations are deleted outright; group conversations are left (the account just leaves, so remaining members keep their history).
+- Account deletion cascades: direct conversations are deleted outright; group conversations are left through the normal leave rules (owner succession, empty groups dissolve), so remaining members keep their history. Self-delete and admin delete share `services/userDeletionService.js`.
+- **Admin** (`/admin/*`, only for the account in `ADMIN_USER_ID`, rate limited):
+  - `GET /admin/users?q=&cursor=&limit=` list/search users (prefix match on username, uniqueId, email)
+  - `GET /admin/users/:id` user detail with message, group, and session counts
+  - `PATCH /admin/users/:id` edit `username`, `email`, `uniqueId`, `password`; any change signs the user out on every device
+  - `DELETE /admin/users/:id/messages` delete every message the user sent (direct and group); everyone else's messages stay
+  - `DELETE /admin/users/:id` delete the user's messages, then the account
+- **Rate limiting** (`express-rate-limit`, in-memory, per client IP): login failures (per IP and per username), signup, password/username recovery, refresh, and admin. Over the limit returns `429 { error }`. Use a shared store such as Redis if the API runs on more than one pod.
 - **Prometheus metrics** (optional) available on `METRICS_PORT` when `ENABLE_METRICS=true`
   - HTTP request metrics (duration, total count)
   - Custom API metrics (messages, friend requests, user registrations)
@@ -140,7 +156,7 @@ Every login/signup issues **two tokens**:
 - The refresh token is **rotated on every use** (one-time use, enforced atomically at the DB level): each call to `/auth/refresh` deletes the old one and issues a new one with a fresh 14-day expiry. A client that returns at least once every 14 days never has to re-enter credentials; one that goes quiet longer must log in again.
 - Only a **hash** of the refresh token is stored (`RefreshToken` model), the same rationale as password hashing — a database leak alone can't be used to impersonate a session.
 - `POST /auth/logout` revokes the refresh token server-side immediately, rather than only relying on the client discarding it.
-- Access tokens are otherwise stateless (no server-side revocation) — this is the standard JWT tradeoff; a compromised access token is bounded by its 7-day expiry.
+- Access tokens are otherwise stateless, with one server-side check: a user's `sessionsRevokedAt` rejects every access and refresh token issued before it (REST and socket handshake). Admin edits and account deletion set it, which signs the user out on every device. Expired or invalid access tokens return `401` so clients refresh.
 
 ### 💬 Conversations (direct + group chat)
 

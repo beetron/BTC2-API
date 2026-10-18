@@ -77,6 +77,13 @@ const userSchema = new mongoose.Schema(
       },
     ],
     fcmTokens: [fcmTokenSchema],
+    // Any access or refresh token issued before this instant is rejected,
+    // which is how an admin edit signs the user out on every device.
+    // Optional so existing documents (no value) behave exactly as before.
+    sessionsRevokedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

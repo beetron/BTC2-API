@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import User from "../models/user.model.js";
+import { isAccessTokenRevoked } from "../utility/sessionRevocation.js";
 
 const protectRoute = async (req, res, next) => {
   try {
@@ -13,8 +14,15 @@ const protectRoute = async (req, res, next) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Verify token validity
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Verify token validity. An expired or malformed token is a 401 so
+    // clients run their refresh-and-retry path instead of treating it as a
+    // server failure.
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      return res.status(401).json({ error: "Unauthorized - Invalid Token" });
+    }
 
     if (!decoded) {
       return res.status(401).json({ error: "Unauthorized - Invalid Token" });
@@ -25,6 +33,10 @@ const protectRoute = async (req, res, next) => {
 
     if (!user) {
       return res.status(401).json({ error: "Unauthorized - User not found" });
+    }
+
+    if (isAccessTokenRevoked(user, decoded)) {
+      return res.status(401).json({ error: "Unauthorized - Session revoked" });
     }
 
     // Set user in request object
