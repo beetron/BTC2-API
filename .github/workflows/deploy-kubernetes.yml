@@ -6,7 +6,12 @@ on:
       - main
     paths:
       - "package.json"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild and redeploy even if this version's image already exists"
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -22,6 +27,7 @@ jobs:
       packages: write
     outputs:
       image_tag: ${{ steps.version.outputs.api_version }}
+      should_build: ${{ steps.check.outputs.should_build }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -43,7 +49,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Only build when package.json has a version that has not been published to GHCR yet
+      - name: Check if image for this version already exists
+        id: check
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.api_version }}"
+          if [ "${{ inputs.force }}" = "true" ]; then
+            echo "Force rebuild requested."
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          elif docker buildx imagetools inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "$IMAGE already exists, skipping build and deployment update."
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "$IMAGE not found, building new version."
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push Docker image to GHCR
+        if: steps.check.outputs.should_build == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -56,6 +79,7 @@ jobs:
 
   update-deployment:
     needs: build-and-push
+    if: needs.build-and-push.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -84,5 +108,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add ${{ env.DEPLOYMENT_FILE }}
+          if git diff --cached --quiet; then
+            echo "Deployment already uses image tag ${{ needs.build-and-push.outputs.image_tag }}, nothing to commit."
+            exit 0
+          fi
           git commit -m "chore: update btc-api image to ${{ needs.build-and-push.outputs.image_tag }}"
           git push
