@@ -32,7 +32,7 @@ A secure WebSocket-enabled REST API for real-time messaging — direct and group
 
 - Signup, login, logout with **rotating refresh tokens** (sliding 14-day session, no forced weekly re-login)
 - Direct (1:1) **and group** conversations, unified under one conversation model
-- Group roles (owner/admin/member), member add/remove, rename/avatar
+- Group roles (owner/member), member add/remove, rename/avatar
 - Cursor-paginated message history with per-user unread counts and per-user "clear history"
 - Image uploads in messages (direct or group)
 - **Link previews** — server-side Open Graph fetch + image proxy, SSRF-guarded and cached
@@ -42,6 +42,9 @@ A secure WebSocket-enabled REST API for real-time messaging — direct and group
 - Push notifications via Firebase (sent when a recipient has no active socket connection)
 - Real-time delivery via Socket.IO, with soft-enforced JWT handshake auth
 - Delete account (cascades conversations, messages, and friend references)
+- **Admin tools** for one admin account: list/search users, create users directly, edit username/email/unique ID/password, delete everything a user sent, delete users
+- **Session revocation**: admin edits and account deletion sign the user out on every device (REST and socket)
+- **Rate limiting** on login, signup, account recovery, token refresh, and admin routes
 
 ## 🚀 Setup
 
@@ -131,13 +134,7 @@ NODE_ENV=development  # for development
 - Push notifications (Firebase) are only sent to a recipient with no active socket connection — connected clients get the update over Socket.IO instead.
 - User reports are emailed to administrators for moderation.
 - Account deletion cascades: direct conversations are deleted outright; group conversations are left through the normal leave rules (owner succession, empty groups dissolve), so remaining members keep their history. Self-delete and admin delete share `services/userDeletionService.js`.
-- **Admin** (`/admin/*`, only for the account in `ADMIN_USER_ID`, rate limited):
-  - `GET /admin/users?q=&cursor=&limit=` list/search users (prefix match on username, uniqueId, email)
-  - `POST /admin/users` create a user directly (no invite step); they start out friends with the admin. `username` and `password` are required; `uniqueId` and `nickname` default to the username, and a blank `email` becomes `<username>@users.invalid`
-  - `GET /admin/users/:id` user detail with message, group, and session counts
-  - `PATCH /admin/users/:id` edit `username`, `email`, `uniqueId`, `password`; any change signs the user out on every device
-  - `DELETE /admin/users/:id/messages` delete every message the user sent (direct and group); everyone else's messages stay
-  - `DELETE /admin/users/:id` delete the user's messages, then the account
+- **Admin**: `/admin/*` is available only to the account whose `_id` is in `ADMIN_USER_ID` (no database role field; anyone else gets a `404`). Endpoints are listed under [Admin](#admin-admin) in the API reference. Signup and admin create share `services/userCreationService.js`.
 - **Rate limiting** (`express-rate-limit`, in-memory, per client IP): login failures (per IP and per username), signup, password/username recovery, refresh, and admin. Over the limit returns `429 { error }`. Use a shared store such as Redis if the API runs on more than one pod.
 - **Prometheus metrics** (optional) available on `METRICS_PORT` when `ENABLE_METRICS=true`
   - HTTP request metrics (duration, total count)
@@ -164,7 +161,7 @@ Every login/signup issues **two tokens**:
 Direct (1:1) and group chats share a single `Conversation` model.
 
 - **Direct** conversations are found-or-created on demand (`POST /conversations/direct`) — a `directKey` derived from the sorted pair of user IDs prevents duplicates.
-- **Group** conversations have members with a role: `owner` (creator), `admin`, or `member`. Only an owner/admin can rename a group or remove another member; anyone can add their own friends and can remove themselves (leave).
+- **Group** conversations have members with a role: `owner` (creator) or `member`. Only the owner can rename a group or remove another member; anyone can add their own friends and can remove themselves (leave). When the owner leaves, the longest-standing member becomes owner, and a group with no members left is deleted.
 - Adding someone to a group requires the *actor* to be friends with them — there's no requirement that all group members be mutual friends with each other (same model most chat apps use: whoever adds you vouches for you, not everyone already knows everyone).
 - Message history is **cursor-paginated** (`GET /conversations/:id/messages`), newest page first.
 - Each member has a per-conversation read state: `unreadCount` (reset on load) and an optional `clearedAt` (per-viewer "delete history" — for a direct conversation, once both members have cleared everything, the conversation and its messages are deleted outright; group history clearing never deletes the conversation for other members).
@@ -184,9 +181,11 @@ Direct (1:1) and group chats share a single `Conversation` model.
 
 - Path: `/socket.io` (versioning handled at the infrastructure layer via Kubernetes/Nginx).
 - Handshake auth: soft-enforced by default, controlled by `SOCKET_REQUIRE_AUTH` (see [Environment Configuration](#️-environment-configuration)). A valid `auth: { token }` always works regardless of the flag; the flag only controls what happens when it's missing/invalid.
+- A correctly signed token for a deleted account, or one issued before the user's `sessionsRevokedAt`, is rejected with `"Unauthorized"` even when `SOCKET_REQUIRE_AUTH=false`.
 - On connect, a socket is registered by `userId` (supports multiple devices per user) and joined to a room per active conversation, so a group broadcast is a single `io.to(conversationId).emit(...)` instead of a per-member socket lookup.
+- Each socket also joins a `user:<userId>` room, so all of one user's devices can be disconnected at once (admin edits, account deletion).
 - Events emitted to clients:
-  - `conversation:message` — `{ conversationId, messageId }`, new message in a direct or group conversation
+  - `conversation:message` — `{ conversationId, messageId }`, new message in a direct or group conversation. After an admin deletes a user's messages it is sent as `{ conversationId }` only, so clients refetch the thread.
   - `conversation:memberAdded` — `{ conversationId, memberIds }`
   - `conversation:memberRemoved` — `{ conversationId, userId }`
   - `conversation:updated` — `{ conversationId, name, avatar }`, group renamed/avatar changed
@@ -211,7 +210,7 @@ Direct (1:1) and group chats share a single `Conversation` model.
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/me` | Get the authenticated user's own profile |
+| GET | `/me` | Get the authenticated user's own profile (includes `isAdmin`) |
 | GET | `/uploads/images/:filename` | Get a profile image |
 | GET | `/friendlist` | List friends |
 | GET | `/friendrequests` | List incoming friend requests |
@@ -263,6 +262,19 @@ Direct (1:1) and group chats share a single `Conversation` model.
 | GET | `/?url=` | Open Graph metadata for a URL |
 | GET | `/image?url=` | Proxied preview image |
 
+### Admin: `/admin`
+
+Only the account in `ADMIN_USER_ID` can call these; everyone else gets `404`. Rate limited to 60 requests per minute.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/users?q=&cursor=&limit=` | List users A to Z, cursor paginated; `q` is a prefix match on username, unique ID or email |
+| POST | `/users` | Create a user directly (no invite step); they start out friends with the admin. `username` and `password` are required; `uniqueId` and `nickname` default to the username, and a blank `email` becomes `<username>@users.invalid` (never receives mail) |
+| GET | `/users/:id` | User detail with message, group, friend, and signed-in device counts |
+| PATCH | `/users/:id` | Edit `username`, `email`, `uniqueId`, `password` (only the fields sent); any change signs the user out on every device |
+| DELETE | `/users/:id/messages` | Delete every message the user sent (direct and group); everyone else's messages and the account stay |
+| DELETE | `/users/:id` | Delete everything the user sent, then the account; the admin can't delete their own account here |
+
 ## 🐳 Deployment
 
 - Docker and docker-compose supported with health checks and SSL configuration.
@@ -279,4 +291,4 @@ Direct (1:1) and group chats share a single `Conversation` model.
 **Note:**
 - No SSL/HTTPS is used in the application; TLS/SSL is handled by nginx for production.
 - CORS is configured via environment variables for security.
-- All routes except health checks require authentication via JWT access tokens.
+- All routes require a JWT access token except `/health`, `/config`, and the public auth routes (`/auth/signup`, `/login`, `/refresh`, `/logout`, `/forgotusername`, `/forgotpassword`).
