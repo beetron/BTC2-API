@@ -31,7 +31,25 @@ const decodeCursor = (cursor) => {
 // Direct (1:1) conversations
 /////////////////////////////////////////////
 
+// True if either user has blocked the other
+const isBlockedEitherWay = async (userIdA, userIdB) =>
+  Boolean(
+    await User.exists({
+      $or: [
+        { _id: userIdA, blockedUsers: userIdB },
+        { _id: userIdB, blockedUsers: userIdA },
+      ],
+    })
+  );
+
 export const findOrCreateDirectConversation = async (userIdA, userIdB) => {
+  // Blocking deletes the direct conversation; without this check either
+  // side could simply recreate it (POST /conversations/direct or the legacy
+  // /messages/send and /messages/upload endpoints) and keep messaging.
+  if (await isBlockedEitherWay(userIdA, userIdB)) {
+    throw new Error("Cannot start a conversation with this user");
+  }
+
   const directKey = Conversation.buildDirectKey(userIdA, userIdB);
 
   let conversation = await Conversation.findOne({ directKey });
