@@ -1,4 +1,5 @@
-import { rateLimit } from "express-rate-limit";
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
+import jwt from "jsonwebtoken";
 
 // Counters live in process memory, which is correct for a single API pod.
 // If the API is ever scaled to several replicas, give each limiter a shared
@@ -59,4 +60,32 @@ export const refreshLimiter = limiter({
 export const adminLimiter = limiter({
   windowMs: MINUTE,
   limit: 60,
+});
+
+// Key by user when the request carries a valid access token, otherwise by IP.
+// Only the JWT signature/expiry is checked (no database access): this runs
+// before protectRoute, which still does the full user and revocation check.
+// Keying by user means the limit stays per person even if many users share
+// an IP (mobile carriers) or TRUST_PROXY does not match the deployment.
+const userOrIpKey = (req) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (token) {
+    try {
+      const { userId } = jwt.verify(token, process.env.JWT_SECRET);
+      if (userId) return `user:${userId}`;
+    } catch {
+      // Invalid or expired token: fall through to the IP key
+    }
+  }
+  return `ip:${ipKeyGenerator(req.ip)}`;
+};
+
+// All authenticated API routes (messages, users, conversations, link
+// previews, uploaded images) share this counter per user. A chat screen can
+// load many images and link previews at once, so this is high: it only
+// stops a single client hammering the database, disk or outbound fetches.
+export const apiLimiter = limiter({
+  windowMs: MINUTE,
+  limit: 1200,
+  keyGenerator: userOrIpKey,
 });

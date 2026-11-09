@@ -1,5 +1,6 @@
 import express from "express";
 import protectRoute from "../middleware/protectRoute.js";
+import { apiLimiter } from "../middleware/rateLimit.js";
 import { uploadImage, processImages } from "../middleware/uploadImage.js";
 import {
   listConversations,
@@ -15,6 +16,9 @@ import {
 } from "../controllers/conversation.controller.js";
 
 const router = express.Router();
+
+// Runs before protectRoute on every route below
+router.use(apiLimiter);
 
 router.get("/", protectRoute, listConversations);
 router.post("/direct", protectRoute, createDirect);

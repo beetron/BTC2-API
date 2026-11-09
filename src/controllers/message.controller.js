@@ -1,4 +1,3 @@
-import User from "../models/user.model.js";
 import Message from "../models/message.model.js";
 import Conversation from "../models/conversation.model.js";
 import {
@@ -9,8 +8,6 @@ import {
 } from "../services/conversationService.js";
 import { getReceiverSocketIds, io } from "../socket/socket.js";
 import { notificationService } from "../services/notificationService.js";
-import fs from 'fs';
-import path from 'path';
 
 /////////////////////////////////////////////
 // Send message to user
@@ -41,11 +38,8 @@ export const sendMessage = async (req, res) => {
       console.log("Receiver socket not connected");
       // Send FCM notification only if receiver is not connected via socket
       console.log("Sending FCM notification");
-      const sender = await User.findById(senderId);
-      // const senderName = sender ? sender.nickname || "User" : "User";
 
       await notificationService(receiverId, {
-        // title: "BTC2: " + senderName,
         title: "BTC2 updates",
         body: message.length > 20 ? message.substring(0, 17) + "..." : message,
         payload: {
