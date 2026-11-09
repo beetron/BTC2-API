@@ -1,5 +1,6 @@
 import express from "express";
 import protectRoute from "../middleware/protectRoute.js";
+import { apiLimiter } from "../middleware/rateLimit.js";
 import {
   uploadProfileImage,
   resizeImage,
@@ -27,6 +28,9 @@ import {
 import { sendUploadedImage } from "../utility/sendUploadedImage.js";
 
 const router = express.Router();
+
+// Runs before protectRoute on every route below
+router.use(apiLimiter);
 
 // Route for physically stored profile images
 router.get("/uploads/images/:filename", protectRoute, sendUploadedImage);
