@@ -1,10 +1,13 @@
 import { getMessaging } from "firebase-admin/messaging";
-import "../firebase/firebaseAdmin.js";
+import firebaseApp from "../firebase/firebaseAdmin.js";
 import User from "../models/user.model.js";
 import ConversationReadState from "../models/conversationReadState.model.js";
 import { ObjectId } from "mongodb";
 
 export const notificationService = async (recipientId, data) => {
+  // Firebase is only left uninitialised under NODE_ENV=test
+  if (!firebaseApp) return false;
+
   try {
     const recipient = await User.findById(recipientId);
     if (
