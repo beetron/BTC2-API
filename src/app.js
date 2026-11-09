@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import cookieParser from "cookie-parser";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -59,7 +58,11 @@ app.use(cors(corsOptions));
 app.use(express.json());
 // Must run after express.json() so the parsed body is checked
 app.use(rejectQueryOperators);
-app.use(cookieParser());
+
+// No cookie parsing: both clients authenticate with an Authorization: Bearer
+// header, which browsers never attach automatically, so requests can't be
+// forged cross-site (CSRF). Don't add cookie-based auth without CSRF
+// protection.
 
 // Conditionally enable metrics middleware
 if (ENABLE_METRICS) {
