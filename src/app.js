@@ -84,6 +84,10 @@ export const API_FEATURES = [
   "edit",
   "delete",
   "messageChanges",
+  // replyTo.imageFile: thumbnail of the first photo of a quoted message
+  "replyImage",
+  // imagesExpiredAt: photos older than IMAGE_RETENTION_DAYS are deleted
+  "imageExpiry",
 ];
 
 app.get("/config", (req, res) => {

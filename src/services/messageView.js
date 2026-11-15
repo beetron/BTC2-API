@@ -5,7 +5,9 @@ import Message from "../models/message.model.js";
 export const REPLY_PREVIEW_LENGTH = 200;
 
 // Same shape in every case, so clients can rely on every field existing:
-// - normal:      the quoted text (cut to REPLY_PREVIEW_LENGTH) and whether it had images
+// - normal:      the quoted text (cut to REPLY_PREVIEW_LENGTH), whether it
+//                had images, and the first image's filename for a thumbnail
+//                (null once its images expired, see imagesExpired)
 // - deleted:     the original was deleted for everyone
 // - unavailable: the original no longer exists at all (history cleared on
 //                both sides, or removed by an admin)
@@ -16,6 +18,8 @@ const replyPreview = (replyToId, quoted) => {
       senderId: null,
       message: null,
       hasImages: false,
+      imageFile: null,
+      imagesExpired: false,
       deleted: false,
       unavailable: true,
     };
@@ -26,21 +30,26 @@ const replyPreview = (replyToId, quoted) => {
       senderId: quoted.senderId,
       message: null,
       hasImages: false,
+      imageFile: null,
+      imagesExpired: false,
       deleted: true,
       unavailable: false,
     };
   }
   const text = quoted.message || "";
+  const hasImages = (quoted.imageFiles?.length ?? 0) > 0;
+  const imagesExpired = hasImages && Boolean(quoted.imagesExpiredAt);
   return {
     _id: replyToId,
     senderId: quoted.senderId,
     message: text.length > REPLY_PREVIEW_LENGTH ? text.slice(0, REPLY_PREVIEW_LENGTH) : text,
-    hasImages: (quoted.imageFiles?.length ?? 0) > 0,
+    hasImages,
+    imageFile: hasImages && !imagesExpired ? quoted.imageFiles[0] : null,
+    imagesExpired,
     deleted: false,
     unavailable: false,
   };
 };
-
 // Adds a `replyTo` preview to every message that quotes another one, with
 // a single query for the whole page. The preview is read live, so editing
 // or deleting the original changes every quote of it. Messages that are
@@ -55,7 +64,7 @@ export const withReplyPreviews = async (messages, conversationId) => {
   // conversationId in the filter: a quote can never surface a message from
   // another conversation, even if a bad replyToId were ever stored
   const quoted = await Message.find({ _id: { $in: quotedIds }, conversationId })
-    .select("senderId message imageFiles deletedAt")
+    .select("senderId message imageFiles imagesExpiredAt deletedAt")
     .lean();
   const quotedById = new Map(quoted.map((q) => [q._id.toString(), q]));
 
