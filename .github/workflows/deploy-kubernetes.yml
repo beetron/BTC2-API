@@ -30,7 +30,7 @@ jobs:
       should_build: ${{ steps.check.outputs.should_build }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Extract version from package.json
         id: version
@@ -85,7 +85,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout private deployment repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.DEPLOYMENT_REPO }}
           token: ${{ secrets.DEPLOYMENT_REPO_TOKEN }}
