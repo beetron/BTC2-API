@@ -2,7 +2,7 @@ import Message from "../models/message.model.js";
 import fs from 'fs';
 import path from 'path';
 
-const uploadsDir = path.join(process.cwd(), 'src', 'uploads', 'images');
+export const uploadsDir = path.join(process.cwd(), 'src', 'uploads', 'images');
 
 // How many filenames to check per query. One query per chunk instead of
 // one per file keeps large purges (hundreds of images) cheap.
@@ -33,6 +33,8 @@ export const handleImageFileCleanup = async (imageFiles) => {
           await fs.promises.unlink(filePath);
           console.log(`Deleted unused image file: ${imageFile}`);
         } catch (error) {
+          // Already gone, e.g. removed by the image expiry job
+          if (error.code === 'ENOENT') continue;
           console.error(`Error deleting image file ${imageFile}:`, error);
         }
       }

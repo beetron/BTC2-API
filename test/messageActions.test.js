@@ -135,6 +135,8 @@ describe("quote reply", () => {
       senderId: alice._id.toString(),
       message: "lunch at noon?",
       hasImages: false,
+      imageFile: null,
+      imagesExpired: false,
       deleted: false,
       unavailable: false,
     });

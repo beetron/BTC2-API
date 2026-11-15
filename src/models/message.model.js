@@ -26,6 +26,13 @@ const messageSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    // Set by the daily image expiry job (scripts/expireImages.js) once the
+    // files are deleted from disk. imageFiles keeps the names so clients
+    // still know how many photos there were and can show a placeholder.
+    imagesExpiredAt: {
+      type: Date,
+      default: null,
+    },
     // Optional id the sending client generates for each message (e.g. a
     // UUID). A retry after a lost response sends the same id again, and
     // the API returns the message it already stored instead of creating a
