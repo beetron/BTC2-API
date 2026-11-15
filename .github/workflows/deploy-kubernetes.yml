@@ -67,7 +67,7 @@ jobs:
 
       - name: Build and push Docker image to GHCR
         if: steps.check.outputs.should_build == 'true'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
