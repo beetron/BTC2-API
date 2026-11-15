@@ -76,9 +76,20 @@ app.get("/health", (req, res) => {
   res.status(200).send("OK");
 });
 
+// Features a client can check for before showing the matching UI, so a
+// newer client still works against an older API
+export const API_FEATURES = [
+  "clientMessageId",
+  "reply",
+  "edit",
+  "delete",
+  "messageChanges",
+];
+
 app.get("/config", (req, res) => {
   res.json({
     apiVersion: API_VERSION,
+    features: API_FEATURES,
   });
 });
 

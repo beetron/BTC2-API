@@ -1,7 +1,10 @@
 import * as conversationService from "../services/conversationService.js";
 import { getReceiverSocketIds, io } from "../socket/socket.js";
+import * as messageActions from "../services/messageActions.js";
 import {
   broadcastNewMessage,
+  broadcastEditedMessage,
+  broadcastDeletedMessage,
   notifyOfflineRecipients,
 } from "../services/messageDelivery.js";
 import { handleImageFileCleanup } from "../utility/imageCleanup.js";
@@ -105,17 +108,81 @@ export const createGroup = async (req, res) => {
 export const getMessages = async (req, res) => {
   try {
     const { id: conversationId } = req.params;
-    const { cursor, limit } = req.query;
+    const { cursor, limit, includeDeleted } = req.query;
 
     const result = await conversationService.getConversationMessages(
       conversationId,
       req.user._id,
-      { cursor, limit }
+      { cursor, limit, includeDeleted: isTrueFlag(includeDeleted) }
     );
 
     res.status(200).json(result);
   } catch (error) {
     sendError(res, error, "getMessages (conversation) controller");
+  }
+};
+
+// ?includeDeleted=1 or ?includeDeleted=true
+const isTrueFlag = (value) => value === "1" || value === "true";
+
+/////////////////////////////////////////////
+// Messages created, edited or deleted since a point in time
+/////////////////////////////////////////////
+export const getMessageChanges = async (req, res) => {
+  try {
+    const { since, cursor, limit } = req.query;
+    const result = await messageActions.getMessageChanges(req.params.id, req.user._id, {
+      since,
+      cursor,
+      limit,
+    });
+    res.status(200).json(result);
+  } catch (error) {
+    sendError(res, error, "getMessageChanges controller");
+  }
+};
+
+// Edits and deletes only send the socket event to open clients. They must
+// never send a push notification (FCM): a push is for new messages only.
+
+/////////////////////////////////////////////
+// Edit the text of one of your own messages
+/////////////////////////////////////////////
+export const editMessage = async (req, res) => {
+  try {
+    const { id: conversationId, messageId } = req.params;
+    const { message: updated, changed } = await messageActions.editMessage({
+      conversationId,
+      messageId,
+      userId: req.user._id,
+      message: req.body?.message,
+    });
+
+    res.status(200).json({ success: true, message: updated });
+
+    if (changed) broadcastEditedMessage(req, conversationId, updated);
+  } catch (error) {
+    sendError(res, error, "editMessage controller");
+  }
+};
+
+/////////////////////////////////////////////
+// Delete one of your own messages for everyone
+/////////////////////////////////////////////
+export const deleteMessage = async (req, res) => {
+  try {
+    const { id: conversationId, messageId } = req.params;
+    const { message: tombstone, changed } = await messageActions.deleteMessageForEveryone({
+      conversationId,
+      messageId,
+      userId: req.user._id,
+    });
+
+    res.status(200).json({ success: true, message: tombstone });
+
+    if (changed) broadcastDeletedMessage(req, conversationId, tombstone);
+  } catch (error) {
+    sendError(res, error, "deleteMessage controller");
   }
 };
 
@@ -135,7 +202,7 @@ const sentMessageResponse = (message) => ({
 export const postMessage = async (req, res) => {
   try {
     const { id: conversationId } = req.params;
-    const { message, clientMessageId } = req.body;
+    const { message, clientMessageId, replyToId } = req.body;
     const senderId = req.user._id;
 
     const {
@@ -147,6 +214,7 @@ export const postMessage = async (req, res) => {
       senderId,
       message,
       clientMessageId,
+      replyToId,
     });
 
     res.status(200).json(sentMessageResponse(newMessage));
@@ -194,6 +262,7 @@ export const uploadConversationImages = async (req, res) => {
       senderId,
       imageFiles: uploadedFiles,
       clientMessageId: req.body?.clientMessageId,
+      replyToId: req.body?.replyToId,
     });
 
     if (duplicate) {

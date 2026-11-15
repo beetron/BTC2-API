@@ -130,7 +130,7 @@ NODE_ENV=development  # for development
 
 - API version is tracked in `package.json` and used for docker image versioning.
 - Profile images are stored in `/src/uploads/images` via `multer` + `sharp`; message/conversation images share the same storage with automatic cleanup once no message references them.
-- Push notifications (Firebase) are only sent to a recipient with no active socket connection — connected clients get the update over Socket.IO instead.
+- Push notifications (Firebase) are only sent for new messages (never for edits or deletes), and only to a recipient with no active socket connection; connected clients get the update over Socket.IO instead.
 - User reports are emailed to administrators for moderation.
 - Account deletion cascades: direct conversations are deleted outright; group conversations are left through the normal leave rules (owner succession, empty groups dissolve), so remaining members keep their history. Self-delete and admin delete share `services/userDeletionService.js`.
 - **Admin**: `/admin/*` is available only to the account whose `_id` is in `ADMIN_USER_ID` (no database role field; anyone else gets a `404`). Endpoints are listed under [Admin](#admin-admin) in the API reference. Signup and admin create share `services/userCreationService.js`.
@@ -168,6 +168,11 @@ Direct (1:1) and group chats share a single `Conversation` model.
 - Each member has a per-conversation read state: `unreadCount` (reset on load) and an optional `clearedAt` (per-viewer "delete history" — for a direct conversation, once both members have cleared everything, the conversation and its messages are deleted outright; group history clearing never deletes the conversation for other members).
 - **Sending** (`POST /conversations/:id/messages`): `message` must be a non-empty string of at most 10,000 characters. The response includes the stored message (`message`, with the server's `_id` and `createdAt`), so a client can show it without refetching: a `200` always means the message is saved.
 - **Retries without duplicates**: a client may send an optional `clientMessageId` (1 to 64 letters, digits, `-` or `_`, e.g. a UUID) with a text message or as a form field with an image upload. Sending the same `clientMessageId` again returns the message already stored instead of creating a second one, so retrying after a lost response is safe. Reusing one for a different conversation is `409`.
+- **Quote reply**: send `replyToId` (a message in the same conversation that is not deleted) with a text message or as an upload form field. Every reply in a response carries a `replyTo` preview: `{ _id, senderId, message, hasImages, deleted, unavailable }`, with `message` cut to 200 characters. The preview is read live, so it follows edits and deletes of the original; `unavailable: true` means the original no longer exists. Messages that are not replies have no `replyTo` field.
+- **Edit** (`PATCH /conversations/:id/messages/:messageId`): the sender only, any time, same text rules as sending. The text is overwritten (no history) and `editedAt` is set so clients can show an "edited" label.
+- **Delete for everyone** (`DELETE /conversations/:id/messages/:messageId`): the sender only; a group owner cannot delete other members' messages. The message becomes a tombstone (`message: null`, no images, no reply, `deletedAt` set), its image files are removed, and it stops counting as unread for anyone who had not read it. History leaves tombstones out by default, so clients that predate this simply stop showing the message; pass `?includeDeleted=1` to get them and show a "message deleted" placeholder. This is separate from `DELETE /messages/delete/:id`, which only clears the caller's own view.
+- **Changes feed** (`GET /conversations/:id/messages/changes`): every message created, edited or deleted after `?since=<ISO date>`, oldest change first, tombstones included, so a client can catch up after reconnecting (a refetch of the newest page misses edits to older messages). Returns `{ messages, nextCursor, hasMore }`; pass `?cursor=<nextCursor>` for the next page and, later, for the next sync. `nextCursor` is `null` when nothing changed. `limit` defaults to 100, max 200.
+- `GET /config` returns `features` (`clientMessageId`, `reply`, `edit`, `delete`, `messageChanges`) so a client can hide UI the API does not support.
 - **The sender's other devices**: by default the `conversation:message` event skips every socket of the sender. A client that sends its socket id in an `X-Socket-Id` header only skips that socket, so the sender's other open devices get the event too.
 - The legacy `/messages/*` routes `send/:id`, `get/:id` and `upload/:id` are **deprecated** (they answer with a `Deprecation` header and every call is logged) and will be removed in 2.0.0. No current client uses them. `delete/:id` (clear history) and `uploads/images/:filename` are still in use and stay.
 
@@ -189,7 +194,7 @@ Direct (1:1) and group chats share a single `Conversation` model.
 - On connect, a socket is registered by `userId` (supports multiple devices per user) and joined to a room per active conversation, so a group broadcast is a single `io.to(conversationId).emit(...)` instead of a per-member socket lookup.
 - Each socket also joins a `user:<userId>` room, so all of one user's devices can be disconnected at once (admin edits, account deletion).
 - Events emitted to clients:
-  - `conversation:message`: `{ conversationId, messageId, senderId, clientMessageId }`, new message in a direct or group conversation (`clientMessageId` is `null` when the sender gave none). After an admin deletes a user's messages it is sent as `{ conversationId }` only, so clients refetch the thread.
+  - `conversation:message`: `{ conversationId, messageId, senderId, clientMessageId, action }`, a message in a direct or group conversation was created, edited or deleted (`action` is `"created"`, `"edited"` or `"deleted"`; `clientMessageId` is `null` when the sender gave none). Clients that ignore `action` just refetch, which already shows edits and drops deleted messages. After an admin deletes a user's messages it is sent as `{ conversationId }` only, so clients refetch the thread.
   - `conversation:memberAdded` — `{ conversationId, memberIds }`
   - `conversation:memberRemoved` — `{ conversationId, userId }`
   - `conversation:updated` — `{ conversationId, name, avatar }`, group renamed/avatar changed
@@ -242,9 +247,12 @@ Direct (1:1) and group chats share a single `Conversation` model.
 | GET | `/:id` | Full detail for one conversation, with member profiles |
 | POST | `/direct` | Find-or-create the direct conversation with another user |
 | POST | `/group` | Create a group conversation |
-| GET | `/:id/messages` | Cursor-paginated message history |
-| POST | `/:id/messages` | Send a text message: `{ message, clientMessageId? }`, returns `{ success, messageId, message }` |
-| POST | `/:id/upload` | Upload image(s) into the conversation (form fields `messageImages`, optional `clientMessageId`), returns `{ success, messageId, message }` |
+| GET | `/:id/messages` | Cursor-paginated message history (`?cursor=`, `?limit=`, `?includeDeleted=1` for tombstones) |
+| GET | `/:id/messages/changes` | Messages created, edited or deleted since `?since=` or `?cursor=` |
+| POST | `/:id/messages` | Send a text message: `{ message, clientMessageId?, replyToId? }`, returns `{ success, messageId, message }` |
+| PATCH | `/:id/messages/:messageId` | Edit your own message: `{ message }`, returns `{ success, message }` |
+| DELETE | `/:id/messages/:messageId` | Delete your own message for everyone, returns `{ success, message }` (the tombstone) |
+| POST | `/:id/upload` | Upload image(s) into the conversation (form fields `messageImages`, optional `clientMessageId` and `replyToId`), returns `{ success, messageId, message }` |
 | PUT | `/:id/members` | Add member(s) to a group |
 | DELETE | `/:id/members/:userId` | Remove a member (or leave, for self) |
 | PUT | `/:id` | Rename a group / update its avatar |

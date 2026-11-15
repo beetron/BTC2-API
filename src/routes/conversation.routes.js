@@ -9,7 +9,10 @@ import {
   createDirect,
   createGroup,
   getMessages,
+  getMessageChanges,
   postMessage,
+  editMessage,
+  deleteMessage,
   uploadConversationImages,
   addMembers,
   removeMember,
@@ -29,7 +32,12 @@ router.post("/direct", protectRoute, createDirect);
 router.post("/group", protectRoute, createGroup);
 router.get("/:id", protectRoute, validId, getConversation);
 router.get("/:id/messages", protectRoute, validId, getMessages);
+router.get("/:id/messages/changes", protectRoute, validId, getMessageChanges);
 router.post("/:id/messages", protectRoute, validId, postMessage);
+// Edit / delete for everyone: the sender's own messages only
+const validMessageId = validateObjectId("id", "messageId");
+router.patch("/:id/messages/:messageId", protectRoute, validMessageId, editMessage);
+router.delete("/:id/messages/:messageId", protectRoute, validMessageId, deleteMessage);
 router.post(
   "/:id/upload",
   protectRoute,

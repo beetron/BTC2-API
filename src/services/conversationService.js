@@ -5,6 +5,7 @@ import User from "../models/user.model.js";
 import { handleImageFileCleanup } from "../utility/imageCleanup.js";
 import { HttpError } from "../utility/httpError.js";
 import { isObjectIdString } from "../middleware/validateObjectId.js";
+import { withReplyPreview, withReplyPreviews } from "./messageView.js";
 
 // Neither client limits message length; this only stops a single message
 // from being absurdly large (the JSON body limit alone allows ~100 KB).
@@ -18,7 +19,7 @@ const areFriends = (user, otherUserId) =>
 
 // Loads just enough of a conversation to check membership, and throws the
 // same errors every endpoint has always returned
-const loadConversationForMember = async (conversationId, userId, fields = "members") => {
+export const loadConversationForMember = async (conversationId, userId, fields = "members") => {
   const conversation = await Conversation.findById(conversationId).select(fields).lean();
   if (!conversation) throw new HttpError(404, "Conversation not found");
   if (!Conversation.hasActiveMember(conversation, userId)) {
@@ -27,12 +28,14 @@ const loadConversationForMember = async (conversationId, userId, fields = "membe
   return conversation;
 };
 
-const encodeCursor = (msg) =>
-  Buffer.from(`${msg.createdAt.toISOString()}|${msg._id.toString()}`).toString(
-    "base64"
-  );
+// A cursor is an opaque "<date>|<id>" position. History pages by createdAt,
+// the changes feed by updatedAt; the encoding is the same.
+export const encodePosition = (date, id) =>
+  Buffer.from(`${date.toISOString()}|${id.toString()}`).toString("base64");
 
-const decodeCursor = (cursor) => {
+const encodeCursor = (msg) => encodePosition(msg.createdAt, msg._id);
+
+export const decodeCursor = (cursor) => {
   if (typeof cursor !== "string") throw new HttpError(400, "Invalid cursor");
   const [createdAtStr, id] = Buffer.from(cursor, "base64")
     .toString("utf-8")
@@ -46,7 +49,12 @@ const decodeCursor = (cursor) => {
 
 const isBlank = (value) => value === undefined || value === null || value === "";
 
-const validateMessageInput = ({ message, imageFiles, clientMessageId }) => {
+export const validateMessageInput = ({
+  message,
+  imageFiles = [],
+  clientMessageId,
+  replyToId,
+}) => {
   if (!isBlank(message) && typeof message !== "string") {
     throw new HttpError(400, "message must be a string");
   }
@@ -66,6 +74,20 @@ const validateMessageInput = ({ message, imageFiles, clientMessageId }) => {
   ) {
     throw new HttpError(400, "Invalid clientMessageId");
   }
+  if (!isBlank(replyToId) && !isObjectIdString(replyToId)) {
+    throw new HttpError(400, "Invalid replyToId");
+  }
+};
+
+// A reply may only quote a live message of the same conversation. The
+// same error for "does not exist" and "is in another conversation", so a
+// replyToId cannot be used to probe for messages elsewhere.
+const assertCanReplyTo = async (replyToId, conversationId) => {
+  const target = await Message.findOne({ _id: replyToId, conversationId })
+    .select("deletedAt")
+    .lean();
+  if (!target) throw new HttpError(400, "Cannot reply to that message");
+  if (target.deletedAt) throw new HttpError(400, "Cannot reply to a deleted message");
 };
 
 // The message this sender already stored under clientMessageId, if any. A
@@ -127,14 +149,16 @@ export const findOrCreateDirectConversation = async (userIdA, userIdB) => {
 // Returns { message, conversation, recipients, duplicate }. duplicate is true
 // when clientMessageId matched a message this sender already stored: that
 // message is returned as is, and nothing is written or should be notified.
+// `message` is a plain object with its replyTo preview, ready to send.
 export const postMessage = async ({
   conversationId,
   senderId,
   message,
   imageFiles = [],
   clientMessageId,
+  replyToId,
 }) => {
-  validateMessageInput({ message, imageFiles, clientMessageId });
+  validateMessageInput({ message, imageFiles, clientMessageId, replyToId });
   const clientId = isBlank(clientMessageId) ? undefined : clientMessageId;
 
   const conversation = await loadConversationForMember(
@@ -143,11 +167,20 @@ export const postMessage = async ({
     "type members"
   );
 
+  const duplicateOf = async (existing) => ({
+    message: await withReplyPreview(existing, conversation._id),
+    conversation,
+    recipients: [],
+    duplicate: true,
+  });
+
   if (clientId) {
     const existing = await findByClientMessageId(senderId, clientId, conversation._id);
-    if (existing) {
-      return { message: existing, conversation, recipients: [], duplicate: true };
-    }
+    if (existing) return duplicateOf(existing);
+  }
+
+  if (!isBlank(replyToId)) {
+    await assertCanReplyTo(replyToId, conversation._id);
   }
 
   // receiverId only makes sense for a direct conversation
@@ -168,15 +201,14 @@ export const postMessage = async ({
       message,
       imageFiles,
       clientMessageId: clientId,
+      replyToId: isBlank(replyToId) ? null : replyToId,
     });
   } catch (error) {
     // Two copies of the same retry arrived at once and the other one won
     // the unique index: answer with the message it stored
     if (error.code === 11000 && clientId) {
       const existing = await findByClientMessageId(senderId, clientId, conversation._id);
-      if (existing) {
-        return { message: existing, conversation, recipients: [], duplicate: true };
-      }
+      if (existing) return duplicateOf(existing);
     }
     throw error;
   }
@@ -213,15 +245,25 @@ export const postMessage = async ({
     ConversationReadState.bulkWrite(readStateOps, { ordered: false }),
   ]);
 
-  return { message: newMessage, conversation, recipients, duplicate: false };
+  return {
+    message: await withReplyPreview(newMessage, conversation._id),
+    conversation,
+    recipients,
+    duplicate: false,
+  };
 };
 
 // Cursor-paginated history. Returns the most recent page first; pass the
 // previous page's nextCursor to page further back in time.
+//
+// Messages deleted for everyone are left out unless includeDeleted is set.
+// Clients that predate delete-for-everyone never ask for them, so to them a
+// deleted message simply disappears (the same way an admin purge looks).
+// Newer clients pass includeDeleted to show a "message deleted" placeholder.
 export const getConversationMessages = async (
   conversationId,
   userId,
-  { cursor, limit = 50 } = {}
+  { cursor, limit = 50, includeDeleted = false } = {}
 ) => {
   const [conversation, state] = await Promise.all([
     loadConversationForMember(conversationId, userId),
@@ -232,6 +274,10 @@ export const getConversationMessages = async (
   const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
 
   const query = { conversationId: conversation._id };
+  if (!includeDeleted) {
+    // null also matches messages stored before deletedAt existed
+    query.deletedAt = null;
+  }
   if (state?.clearedAt) {
     query.createdAt = { $gt: state.clearedAt };
   }
@@ -263,7 +309,10 @@ export const getConversationMessages = async (
     );
   }
 
-  return { messages, nextCursor };
+  return {
+    messages: await withReplyPreviews(messages, conversation._id),
+    nextCursor,
+  };
 };
 
 // Legacy-compatible read: plain array, capped, no cursor -- matches the
@@ -308,7 +357,9 @@ export const clearHistoryUpTo = async ({ conversationId, userId, messageId }) =>
 
   if (conversation.type === "direct") {
     const activeMembers = conversation.members.filter((m) => !m.leftAt);
-    const latestMessage = await Message.findOne({ conversationId })
+    // The newest message either side can still see: a message deleted for
+    // everyone after it is hidden, so it must not stop the cascade
+    const latestMessage = await Message.findOne({ conversationId, deletedAt: null })
       .sort({ createdAt: -1 })
       .select("createdAt")
       .lean();

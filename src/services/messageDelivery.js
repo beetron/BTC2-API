@@ -19,9 +19,16 @@ const senderSocketsToSkip = (req, senderId) => {
   return senderSocketIds;
 };
 
-// Tells every member's open clients that a message arrived. Clients only
-// get ids and refetch, so no message content goes over the socket.
-export const broadcastNewMessage = (req, conversationId, message) => {
+// Tells every member's open clients that a message was created, edited or
+// deleted. All three use the conversation:message event that every client
+// build already refetches on, so clients that do not know about edits or
+// deletes still show them (deleted messages drop out of their refetched
+// page). Newer clients read `action` and can update just that message.
+// Only ids go over the socket, never message content.
+//
+// action: "created" | "edited" | "deleted". Only the sender can do any of
+// the three, so the sender's sockets are the ones skipped.
+const broadcastMessageEvent = (req, conversationId, message, action) => {
   const id = conversationId.toString();
   io.to(id)
     .except(senderSocketsToSkip(req, message.senderId))
@@ -30,14 +37,33 @@ export const broadcastNewMessage = (req, conversationId, message) => {
       messageId: message._id,
       senderId: message.senderId,
       clientMessageId: message.clientMessageId ?? null,
+      action,
     });
 };
 
-// Push notifications for members with no socket connected. Called after
-// the HTTP response is sent and never awaited, so the sender is not kept
-// waiting on Firebase once per offline member. notificationService
-// catches its own errors; allSettled is a second net so a failure here can
-// never become an unhandled rejection.
+export const broadcastNewMessage = (req, conversationId, message) =>
+  broadcastMessageEvent(req, conversationId, message, "created");
+
+export const broadcastEditedMessage = (req, conversationId, message) =>
+  broadcastMessageEvent(req, conversationId, message, "edited");
+
+export const broadcastDeletedMessage = (req, conversationId, message) =>
+  broadcastMessageEvent(req, conversationId, message, "deleted");
+
+// Sends one push notification. Replaceable only so tests can record which
+// actions push and which do not (see setPushSenderForTests).
+let sendPush = notificationService;
+
+export const setPushSenderForTests = (sender) => {
+  sendPush = sender || notificationService;
+};
+
+// Push notifications for members with no socket connected. Only for NEW
+// messages (text or images): editing or deleting a message must never send
+// a push. Called after the HTTP response is sent and never awaited, so the
+// sender is not kept waiting on Firebase once per offline member.
+// notificationService catches its own errors; allSettled is a second net
+// so a failure here can never become an unhandled rejection.
 export const notifyOfflineRecipients = (recipients, notification) => {
   const offline = recipients.filter(
     (m) => getReceiverSocketIds(m.userId.toString()).length === 0
@@ -45,7 +71,7 @@ export const notifyOfflineRecipients = (recipients, notification) => {
   if (offline.length === 0) return;
 
   Promise.allSettled(
-    offline.map((m) => notificationService(m.userId, notification))
+    offline.map((m) => sendPush(m.userId, notification))
   ).then((results) => {
     results.forEach((result) => {
       if (result.status === "rejected") {
