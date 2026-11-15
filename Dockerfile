@@ -19,4 +19,7 @@ COPY . .
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+# Run node directly instead of "npm start": npm does not reliably pass
+# SIGTERM on to node, so the graceful shutdown in server.js would never run
+# and Kubernetes would kill the pod after its full grace period
+CMD ["node", "server.js"]

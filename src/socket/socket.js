@@ -139,12 +139,15 @@ io.on("connection", async (socket) => {
     // Join a room per conversation so group broadcasts are a single
     // io.to(conversationId).emit() instead of per-member socket lookups.
     try {
-      const conversations = await Conversation.find({ "members.userId": userId });
-      conversations.forEach((c) => {
-        if (c.isActiveMember(userId)) {
-          socket.join(c._id.toString());
-        }
-      });
+      // Only the ids are needed, and only for conversations the user is
+      // still in, so the filter runs in MongoDB instead of loading every
+      // full conversation document on each connect and reconnect
+      const conversations = await Conversation.find(
+        Conversation.activeMemberFilter(userId)
+      )
+        .select("_id")
+        .lean();
+      conversations.forEach((c) => socket.join(c._id.toString()));
     } catch (error) {
       console.log(`Error joining conversation rooms for ${userId}:`, error.message);
     }

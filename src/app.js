@@ -32,7 +32,9 @@ const corsOptions = {
   origin: process.env.CORS_ORIGIN?.split(",") || [],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  // X-Socket-Id: optional, lets a sender's other devices get the
+  // conversation:message event for their own message (messageDelivery.js)
+  allowedHeaders: ["Content-Type", "Authorization", "X-Socket-Id"],
 };
 
 // How many reverse proxies sit in front of the API (Kubernetes ingress = 1).

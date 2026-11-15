@@ -106,11 +106,10 @@ METRICS_PORT=9090             # port for Prometheus metrics endpoint (default: 9
 # false: a missing/invalid JWT is tolerated (soft enforcement, back-compat
 #        with pre-JWT clients).
 # true:  a missing/invalid/expired JWT rejects the handshake outright.
-# Flip this once every live client (web + mobile) reliably sends
-# `auth: { token }` on connect, then remove the flag and the fallback
-# path in src/socket/socket.js entirely -- it's scaffolding for the
-# migration, not a permanent runtime setting.
-SOCKET_REQUIRE_AUTH=false
+# Production runs with true since 1.5.0 (every web and mobile build sends
+# `auth: { token }`). The flag and the fallback path in
+# src/socket/socket.js are removed in 2.0.0.
+SOCKET_REQUIRE_AUTH=true
 
 # Admin account: the Mongo _id of the one user allowed to call /admin/*.
 # Unset = admin endpoints disabled.
@@ -136,6 +135,8 @@ NODE_ENV=development  # for development
 - Account deletion cascades: direct conversations are deleted outright; group conversations are left through the normal leave rules (owner succession, empty groups dissolve), so remaining members keep their history. Self-delete and admin delete share `services/userDeletionService.js`.
 - **Admin**: `/admin/*` is available only to the account whose `_id` is in `ADMIN_USER_ID` (no database role field; anyone else gets a `404`). Endpoints are listed under [Admin](#admin-admin) in the API reference. Signup and admin create share `services/userCreationService.js`.
 - **Rate limiting** (`express-rate-limit`, in-memory, per client IP): login failures (per IP and per username), signup, password/username recovery, refresh, and admin. Over the limit returns `429 { error }`. Use a shared store such as Redis if the API runs on more than one pod.
+- **Errors** always have the shape `{ error }`. Expected failures carry a readable message (`400` bad input or not allowed, `404` not found, `409` conflict). Unexpected failures are logged and answered with `400 { error: "Request failed" }`, never with internal details; they are not `500` yet because btc2-web signs the user out on any `403` or `500` (see `src/utility/httpError.js`).
+- **Graceful shutdown**: on `SIGTERM` the API stops accepting connections, lets requests in progress finish, disconnects sockets and closes MongoDB, exiting within 20 seconds. The Docker image runs `node server.js` directly so the signal reaches Node.
 - **Prometheus metrics** (optional) available on `METRICS_PORT` when `ENABLE_METRICS=true`
   - HTTP request metrics (duration, total count)
   - Custom API metrics (messages, friend requests, user registrations)
@@ -165,7 +166,10 @@ Direct (1:1) and group chats share a single `Conversation` model.
 - Adding someone to a group requires the *actor* to be friends with them — there's no requirement that all group members be mutual friends with each other (same model most chat apps use: whoever adds you vouches for you, not everyone already knows everyone).
 - Message history is **cursor-paginated** (`GET /conversations/:id/messages`), newest page first.
 - Each member has a per-conversation read state: `unreadCount` (reset on load) and an optional `clearedAt` (per-viewer "delete history" — for a direct conversation, once both members have cleared everything, the conversation and its messages are deleted outright; group history clearing never deletes the conversation for other members).
-- The legacy `/messages/*` routes (`send/:id`, `get/:id`, `upload/:id`, `delete/:id`) still work and are backed by the same conversation model under the hood (they find-or-create the direct conversation for you) — kept for simple 1:1 messaging and older clients that haven't migrated to the `/conversations` endpoints.
+- **Sending** (`POST /conversations/:id/messages`): `message` must be a non-empty string of at most 10,000 characters. The response includes the stored message (`message`, with the server's `_id` and `createdAt`), so a client can show it without refetching: a `200` always means the message is saved.
+- **Retries without duplicates**: a client may send an optional `clientMessageId` (1 to 64 letters, digits, `-` or `_`, e.g. a UUID) with a text message or as a form field with an image upload. Sending the same `clientMessageId` again returns the message already stored instead of creating a second one, so retrying after a lost response is safe. Reusing one for a different conversation is `409`.
+- **The sender's other devices**: by default the `conversation:message` event skips every socket of the sender. A client that sends its socket id in an `X-Socket-Id` header only skips that socket, so the sender's other open devices get the event too.
+- The legacy `/messages/*` routes `send/:id`, `get/:id` and `upload/:id` are **deprecated** (they answer with a `Deprecation` header and every call is logged) and will be removed in 2.0.0. No current client uses them. `delete/:id` (clear history) and `uploads/images/:filename` are still in use and stay.
 
 ### 🔗 Link Previews
 
@@ -185,7 +189,7 @@ Direct (1:1) and group chats share a single `Conversation` model.
 - On connect, a socket is registered by `userId` (supports multiple devices per user) and joined to a room per active conversation, so a group broadcast is a single `io.to(conversationId).emit(...)` instead of a per-member socket lookup.
 - Each socket also joins a `user:<userId>` room, so all of one user's devices can be disconnected at once (admin edits, account deletion).
 - Events emitted to clients:
-  - `conversation:message` — `{ conversationId, messageId }`, new message in a direct or group conversation. After an admin deletes a user's messages it is sent as `{ conversationId }` only, so clients refetch the thread.
+  - `conversation:message`: `{ conversationId, messageId, senderId, clientMessageId }`, new message in a direct or group conversation (`clientMessageId` is `null` when the sender gave none). After an admin deletes a user's messages it is sent as `{ conversationId }` only, so clients refetch the thread.
   - `conversation:memberAdded` — `{ conversationId, memberIds }`
   - `conversation:memberRemoved` — `{ conversationId, userId }`
   - `conversation:updated` — `{ conversationId, name, avatar }`, group renamed/avatar changed
@@ -239,8 +243,8 @@ Direct (1:1) and group chats share a single `Conversation` model.
 | POST | `/direct` | Find-or-create the direct conversation with another user |
 | POST | `/group` | Create a group conversation |
 | GET | `/:id/messages` | Cursor-paginated message history |
-| POST | `/:id/messages` | Send a text message |
-| POST | `/:id/upload` | Upload image(s) into the conversation |
+| POST | `/:id/messages` | Send a text message: `{ message, clientMessageId? }`, returns `{ success, messageId, message }` |
+| POST | `/:id/upload` | Upload image(s) into the conversation (form fields `messageImages`, optional `clientMessageId`), returns `{ success, messageId, message }` |
 | PUT | `/:id/members` | Add member(s) to a group |
 | DELETE | `/:id/members/:userId` | Remove a member (or leave, for self) |
 | PUT | `/:id` | Rename a group / update its avatar |
@@ -249,9 +253,9 @@ Direct (1:1) and group chats share a single `Conversation` model.
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/send/:id` | Send a message to a user (direct conversation) |
-| POST | `/upload/:id` | Upload image(s) to a user |
-| GET | `/get/:id` | Get conversation history (capped, non-paginated) |
+| POST | `/send/:id` | Deprecated. Send a message to a user (direct conversation) |
+| POST | `/upload/:id` | Deprecated. Upload image(s) to a user |
+| GET | `/get/:id` | Deprecated. Get conversation history (capped, non-paginated) |
 | GET | `/uploads/images/:filename` | Get a message image (shared by both `/messages` and `/conversations` uploads) |
 | DELETE | `/delete/:id` | Clear history up to a message |
 

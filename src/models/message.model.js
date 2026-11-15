@@ -26,11 +26,25 @@ const messageSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    // Optional id the sending client generates for each message (e.g. a
+    // UUID). A retry after a lost response sends the same id again, and
+    // the API returns the message it already stored instead of creating a
+    // duplicate. Unique per sender.
+    clientMessageId: {
+      type: String,
+      default: undefined,
+    },
   },
   { timestamps: true }
 );
 
 messageSchema.index({ conversationId: 1, createdAt: -1, _id: -1 });
+// Only messages that carry a clientMessageId are indexed, so messages
+// without one (older clients) never collide with each other.
+messageSchema.index(
+  { senderId: 1, clientMessageId: 1 },
+  { unique: true, partialFilterExpression: { clientMessageId: { $type: "string" } } }
+);
 // Lets admin purges find every message a user sent without a collection scan
 messageSchema.index({ senderId: 1 });
 

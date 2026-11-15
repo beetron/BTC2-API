@@ -1,6 +1,12 @@
 import * as conversationService from "../services/conversationService.js";
 import { getReceiverSocketIds, io } from "../socket/socket.js";
-import { notificationService } from "../services/notificationService.js";
+import {
+  broadcastNewMessage,
+  notifyOfflineRecipients,
+} from "../services/messageDelivery.js";
+import { handleImageFileCleanup } from "../utility/imageCleanup.js";
+import { sendError } from "../utility/httpError.js";
+import { isObjectIdString } from "../middleware/validateObjectId.js";
 
 /////////////////////////////////////////////
 // List all conversations (direct + group) for the caller
@@ -10,8 +16,7 @@ export const listConversations = async (req, res) => {
     const conversations = await conversationService.listConversations(req.user._id);
     res.status(200).json(conversations);
   } catch (error) {
-    console.log("Error in listConversations controller: ", error.message);
-    res.status(500).json({ error: "Internal server error" });
+    sendError(res, error, "listConversations controller");
   }
 };
 
@@ -26,8 +31,7 @@ export const getConversation = async (req, res) => {
     );
     res.status(200).json(detail);
   } catch (error) {
-    console.log("Error in getConversation controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "getConversation controller");
   }
 };
 
@@ -39,6 +43,9 @@ export const createDirect = async (req, res) => {
     const { userId: otherUserId } = req.body;
     if (!otherUserId) {
       return res.status(400).json({ error: "userId is required" });
+    }
+    if (!isObjectIdString(otherUserId)) {
+      return res.status(400).json({ error: "Invalid userId" });
     }
 
     const conversation = await conversationService.findOrCreateDirectConversation(
@@ -59,8 +66,7 @@ export const createDirect = async (req, res) => {
     );
     res.status(200).json(detail);
   } catch (error) {
-    console.log("Error in createDirect controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "createDirect controller");
   }
 };
 
@@ -89,8 +95,7 @@ export const createGroup = async (req, res) => {
 
     res.status(201).json(conversation);
   } catch (error) {
-    console.log("Error in createGroup controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "createGroup controller");
   }
 };
 
@@ -110,10 +115,19 @@ export const getMessages = async (req, res) => {
 
     res.status(200).json(result);
   } catch (error) {
-    console.log("Error in getMessages (conversation) controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "getMessages (conversation) controller");
   }
 };
+
+// Same response for a new message and for a retried one, so a client can
+// treat any 200 as "this message is stored" and render it straight from
+// the response instead of refetching. `message` is the stored message,
+// with the server's _id and createdAt.
+const sentMessageResponse = (message) => ({
+  success: true,
+  messageId: message._id,
+  message,
+});
 
 /////////////////////////////////////////////
 // Send a message into a direct or group conversation
@@ -121,48 +135,38 @@ export const getMessages = async (req, res) => {
 export const postMessage = async (req, res) => {
   try {
     const { id: conversationId } = req.params;
-    const { message } = req.body;
+    const { message, clientMessageId } = req.body;
     const senderId = req.user._id;
 
-    const { message: newMessage, recipients } = await conversationService.postMessage({
+    const {
+      message: newMessage,
+      recipients,
+      duplicate,
+    } = await conversationService.postMessage({
       conversationId,
       senderId,
       message,
+      clientMessageId,
     });
 
-    const senderSocketIds = getReceiverSocketIds(senderId.toString());
-    io.to(conversationId)
-      .except(senderSocketIds)
-      .emit("conversation:message", {
-        conversationId,
-        messageId: newMessage._id,
-      });
+    res.status(200).json(sentMessageResponse(newMessage));
 
-    const offlineRecipients = recipients.filter(
-      (m) => getReceiverSocketIds(m.userId.toString()).length === 0
-    );
+    // A retry of a message that is already stored was already announced
+    if (duplicate) return;
 
-    if (offlineRecipients.length > 0) {
-      await Promise.all(
-        offlineRecipients.map((m) =>
-          notificationService(m.userId, {
-            title: "BTC2 updates",
-            body: message && message.length > 20 ? message.substring(0, 17) + "..." : message,
-            payload: {
-              messageId: newMessage._id.toString(),
-              senderId: senderId.toString(),
-              conversationId: conversationId.toString(),
-              type: "chat_message",
-            },
-          })
-        )
-      );
-    }
-
-    res.status(200).json({ success: true, messageId: newMessage._id });
+    broadcastNewMessage(req, conversationId, newMessage);
+    notifyOfflineRecipients(recipients, {
+      title: "BTC2 updates",
+      body: message.length > 20 ? message.substring(0, 17) + "..." : message,
+      payload: {
+        messageId: newMessage._id.toString(),
+        senderId: senderId.toString(),
+        conversationId: conversationId.toString(),
+        type: "chat_message",
+      },
+    });
   } catch (error) {
-    console.log("Error in postMessage (conversation) controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "postMessage (conversation) controller");
   }
 };
 
@@ -170,53 +174,53 @@ export const postMessage = async (req, res) => {
 // Upload images into a direct or group conversation
 /////////////////////////////////////////////
 export const uploadConversationImages = async (req, res) => {
+  // Multer has already written the files to disk by the time this runs
+  const uploadedFiles = req.filenames || [];
+
   try {
     const { id: conversationId } = req.params;
     const senderId = req.user._id;
 
-    if (!req.filenames || req.filenames.length === 0) {
+    if (uploadedFiles.length === 0) {
       return res.status(400).json({ error: "No images uploaded" });
     }
 
-    const { message: newMessage, recipients } = await conversationService.postMessage({
+    const {
+      message: newMessage,
+      recipients,
+      duplicate,
+    } = await conversationService.postMessage({
       conversationId,
       senderId,
-      imageFiles: req.filenames,
+      imageFiles: uploadedFiles,
+      clientMessageId: req.body?.clientMessageId,
     });
 
-    const senderSocketIds = getReceiverSocketIds(senderId.toString());
-    io.to(conversationId)
-      .except(senderSocketIds)
-      .emit("conversation:message", {
-        conversationId,
-        messageId: newMessage._id,
-      });
-
-    const offlineRecipients = recipients.filter(
-      (m) => getReceiverSocketIds(m.userId.toString()).length === 0
-    );
-
-    if (offlineRecipients.length > 0) {
-      await Promise.all(
-        offlineRecipients.map((m) =>
-          notificationService(m.userId, {
-            title: "BTC2 updates",
-            body: "Received " + req.filenames.length + " image(s)",
-            payload: {
-              messageId: newMessage._id.toString(),
-              senderId: senderId.toString(),
-              conversationId: conversationId.toString(),
-              type: "chat_image",
-            },
-          })
-        )
-      );
+    if (duplicate) {
+      // The retry's copies of the images belong to no message; the stored
+      // message still points at the files from the first attempt
+      await handleImageFileCleanup(uploadedFiles);
+      return res.status(200).json(sentMessageResponse(newMessage));
     }
 
-    res.status(200).json({ success: true, messageId: newMessage._id });
+    res.status(200).json(sentMessageResponse(newMessage));
+
+    broadcastNewMessage(req, conversationId, newMessage);
+    notifyOfflineRecipients(recipients, {
+      title: "BTC2 updates",
+      body: "Received " + uploadedFiles.length + " image(s)",
+      payload: {
+        messageId: newMessage._id.toString(),
+        senderId: senderId.toString(),
+        conversationId: conversationId.toString(),
+        type: "chat_image",
+      },
+    });
   } catch (error) {
-    console.log("Error in uploadConversationImages controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    // Nothing references the files of a failed upload (not a member, bad
+    // input...), so remove them instead of leaving them on disk forever
+    await handleImageFileCleanup(uploadedFiles);
+    sendError(res, error, "uploadConversationImages controller");
   }
 };
 
@@ -246,8 +250,7 @@ export const addMembers = async (req, res) => {
 
     res.status(200).json(conversation);
   } catch (error) {
-    console.log("Error in addMembers controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "addMembers controller");
   }
 };
 
@@ -277,8 +280,7 @@ export const removeMember = async (req, res) => {
 
     res.status(200).json({ ...conversation.toObject(), conversationDeleted });
   } catch (error) {
-    console.log("Error in removeMember controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "removeMember controller");
   }
 };
 
@@ -301,7 +303,6 @@ export const updateConversation = async (req, res) => {
 
     res.status(200).json(conversation);
   } catch (error) {
-    console.log("Error in updateConversation controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "updateConversation controller");
   }
 };

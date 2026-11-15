@@ -1,16 +1,14 @@
 {
   "name": "btc2_api",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "description": "",
   "main": "server.js",
   "scripts": {
     "server": "nodemon server.js",
     "start": "node server.js",
-    "build": "npm run build --prefix frontend",
     "test": "node --test --test-concurrency=1 \"test/**/*.test.js\"",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "migrate:conversations": "node src/scripts/migrateToConversations.js"
+    "lint:fix": "eslint . --fix"
   },
   "type": "module",
   "keywords": [],
