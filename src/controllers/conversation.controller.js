@@ -1,6 +1,15 @@
 import * as conversationService from "../services/conversationService.js";
 import { getReceiverSocketIds, io } from "../socket/socket.js";
-import { notificationService } from "../services/notificationService.js";
+import * as messageActions from "../services/messageActions.js";
+import {
+  broadcastNewMessage,
+  broadcastEditedMessage,
+  broadcastDeletedMessage,
+  notifyOfflineRecipients,
+} from "../services/messageDelivery.js";
+import { handleImageFileCleanup } from "../utility/imageCleanup.js";
+import { sendError } from "../utility/httpError.js";
+import { isObjectIdString } from "../middleware/validateObjectId.js";
 
 /////////////////////////////////////////////
 // List all conversations (direct + group) for the caller
@@ -10,8 +19,7 @@ export const listConversations = async (req, res) => {
     const conversations = await conversationService.listConversations(req.user._id);
     res.status(200).json(conversations);
   } catch (error) {
-    console.log("Error in listConversations controller: ", error.message);
-    res.status(500).json({ error: "Internal server error" });
+    sendError(res, error, "listConversations controller");
   }
 };
 
@@ -26,8 +34,7 @@ export const getConversation = async (req, res) => {
     );
     res.status(200).json(detail);
   } catch (error) {
-    console.log("Error in getConversation controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "getConversation controller");
   }
 };
 
@@ -39,6 +46,9 @@ export const createDirect = async (req, res) => {
     const { userId: otherUserId } = req.body;
     if (!otherUserId) {
       return res.status(400).json({ error: "userId is required" });
+    }
+    if (!isObjectIdString(otherUserId)) {
+      return res.status(400).json({ error: "Invalid userId" });
     }
 
     const conversation = await conversationService.findOrCreateDirectConversation(
@@ -59,8 +69,7 @@ export const createDirect = async (req, res) => {
     );
     res.status(200).json(detail);
   } catch (error) {
-    console.log("Error in createDirect controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "createDirect controller");
   }
 };
 
@@ -89,8 +98,7 @@ export const createGroup = async (req, res) => {
 
     res.status(201).json(conversation);
   } catch (error) {
-    console.log("Error in createGroup controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "createGroup controller");
   }
 };
 
@@ -100,20 +108,93 @@ export const createGroup = async (req, res) => {
 export const getMessages = async (req, res) => {
   try {
     const { id: conversationId } = req.params;
-    const { cursor, limit } = req.query;
+    const { cursor, limit, includeDeleted } = req.query;
 
     const result = await conversationService.getConversationMessages(
       conversationId,
       req.user._id,
-      { cursor, limit }
+      { cursor, limit, includeDeleted: isTrueFlag(includeDeleted) }
     );
 
     res.status(200).json(result);
   } catch (error) {
-    console.log("Error in getMessages (conversation) controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "getMessages (conversation) controller");
   }
 };
+
+// ?includeDeleted=1 or ?includeDeleted=true
+const isTrueFlag = (value) => value === "1" || value === "true";
+
+/////////////////////////////////////////////
+// Messages created, edited or deleted since a point in time
+/////////////////////////////////////////////
+export const getMessageChanges = async (req, res) => {
+  try {
+    const { since, cursor, limit } = req.query;
+    const result = await messageActions.getMessageChanges(req.params.id, req.user._id, {
+      since,
+      cursor,
+      limit,
+    });
+    res.status(200).json(result);
+  } catch (error) {
+    sendError(res, error, "getMessageChanges controller");
+  }
+};
+
+// Edits and deletes only send the socket event to open clients. They must
+// never send a push notification (FCM): a push is for new messages only.
+
+/////////////////////////////////////////////
+// Edit the text of one of your own messages
+/////////////////////////////////////////////
+export const editMessage = async (req, res) => {
+  try {
+    const { id: conversationId, messageId } = req.params;
+    const { message: updated, changed } = await messageActions.editMessage({
+      conversationId,
+      messageId,
+      userId: req.user._id,
+      message: req.body?.message,
+    });
+
+    res.status(200).json({ success: true, message: updated });
+
+    if (changed) broadcastEditedMessage(req, conversationId, updated);
+  } catch (error) {
+    sendError(res, error, "editMessage controller");
+  }
+};
+
+/////////////////////////////////////////////
+// Delete one of your own messages for everyone
+/////////////////////////////////////////////
+export const deleteMessage = async (req, res) => {
+  try {
+    const { id: conversationId, messageId } = req.params;
+    const { message: tombstone, changed } = await messageActions.deleteMessageForEveryone({
+      conversationId,
+      messageId,
+      userId: req.user._id,
+    });
+
+    res.status(200).json({ success: true, message: tombstone });
+
+    if (changed) broadcastDeletedMessage(req, conversationId, tombstone);
+  } catch (error) {
+    sendError(res, error, "deleteMessage controller");
+  }
+};
+
+// Same response for a new message and for a retried one, so a client can
+// treat any 200 as "this message is stored" and render it straight from
+// the response instead of refetching. `message` is the stored message,
+// with the server's _id and createdAt.
+const sentMessageResponse = (message) => ({
+  success: true,
+  messageId: message._id,
+  message,
+});
 
 /////////////////////////////////////////////
 // Send a message into a direct or group conversation
@@ -121,48 +202,39 @@ export const getMessages = async (req, res) => {
 export const postMessage = async (req, res) => {
   try {
     const { id: conversationId } = req.params;
-    const { message } = req.body;
+    const { message, clientMessageId, replyToId } = req.body;
     const senderId = req.user._id;
 
-    const { message: newMessage, recipients } = await conversationService.postMessage({
+    const {
+      message: newMessage,
+      recipients,
+      duplicate,
+    } = await conversationService.postMessage({
       conversationId,
       senderId,
       message,
+      clientMessageId,
+      replyToId,
     });
 
-    const senderSocketIds = getReceiverSocketIds(senderId.toString());
-    io.to(conversationId)
-      .except(senderSocketIds)
-      .emit("conversation:message", {
-        conversationId,
-        messageId: newMessage._id,
-      });
+    res.status(200).json(sentMessageResponse(newMessage));
 
-    const offlineRecipients = recipients.filter(
-      (m) => getReceiverSocketIds(m.userId.toString()).length === 0
-    );
+    // A retry of a message that is already stored was already announced
+    if (duplicate) return;
 
-    if (offlineRecipients.length > 0) {
-      await Promise.all(
-        offlineRecipients.map((m) =>
-          notificationService(m.userId, {
-            title: "BTC2 updates",
-            body: message && message.length > 20 ? message.substring(0, 17) + "..." : message,
-            payload: {
-              messageId: newMessage._id.toString(),
-              senderId: senderId.toString(),
-              conversationId: conversationId.toString(),
-              type: "chat_message",
-            },
-          })
-        )
-      );
-    }
-
-    res.status(200).json({ success: true, messageId: newMessage._id });
+    broadcastNewMessage(req, conversationId, newMessage);
+    notifyOfflineRecipients(recipients, {
+      title: "BTC2 updates",
+      body: message.length > 20 ? message.substring(0, 17) + "..." : message,
+      payload: {
+        messageId: newMessage._id.toString(),
+        senderId: senderId.toString(),
+        conversationId: conversationId.toString(),
+        type: "chat_message",
+      },
+    });
   } catch (error) {
-    console.log("Error in postMessage (conversation) controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "postMessage (conversation) controller");
   }
 };
 
@@ -170,53 +242,54 @@ export const postMessage = async (req, res) => {
 // Upload images into a direct or group conversation
 /////////////////////////////////////////////
 export const uploadConversationImages = async (req, res) => {
+  // Multer has already written the files to disk by the time this runs
+  const uploadedFiles = req.filenames || [];
+
   try {
     const { id: conversationId } = req.params;
     const senderId = req.user._id;
 
-    if (!req.filenames || req.filenames.length === 0) {
+    if (uploadedFiles.length === 0) {
       return res.status(400).json({ error: "No images uploaded" });
     }
 
-    const { message: newMessage, recipients } = await conversationService.postMessage({
+    const {
+      message: newMessage,
+      recipients,
+      duplicate,
+    } = await conversationService.postMessage({
       conversationId,
       senderId,
-      imageFiles: req.filenames,
+      imageFiles: uploadedFiles,
+      clientMessageId: req.body?.clientMessageId,
+      replyToId: req.body?.replyToId,
     });
 
-    const senderSocketIds = getReceiverSocketIds(senderId.toString());
-    io.to(conversationId)
-      .except(senderSocketIds)
-      .emit("conversation:message", {
-        conversationId,
-        messageId: newMessage._id,
-      });
-
-    const offlineRecipients = recipients.filter(
-      (m) => getReceiverSocketIds(m.userId.toString()).length === 0
-    );
-
-    if (offlineRecipients.length > 0) {
-      await Promise.all(
-        offlineRecipients.map((m) =>
-          notificationService(m.userId, {
-            title: "BTC2 updates",
-            body: "Received " + req.filenames.length + " image(s)",
-            payload: {
-              messageId: newMessage._id.toString(),
-              senderId: senderId.toString(),
-              conversationId: conversationId.toString(),
-              type: "chat_image",
-            },
-          })
-        )
-      );
+    if (duplicate) {
+      // The retry's copies of the images belong to no message; the stored
+      // message still points at the files from the first attempt
+      await handleImageFileCleanup(uploadedFiles);
+      return res.status(200).json(sentMessageResponse(newMessage));
     }
 
-    res.status(200).json({ success: true, messageId: newMessage._id });
+    res.status(200).json(sentMessageResponse(newMessage));
+
+    broadcastNewMessage(req, conversationId, newMessage);
+    notifyOfflineRecipients(recipients, {
+      title: "BTC2 updates",
+      body: "Received " + uploadedFiles.length + " image(s)",
+      payload: {
+        messageId: newMessage._id.toString(),
+        senderId: senderId.toString(),
+        conversationId: conversationId.toString(),
+        type: "chat_image",
+      },
+    });
   } catch (error) {
-    console.log("Error in uploadConversationImages controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    // Nothing references the files of a failed upload (not a member, bad
+    // input...), so remove them instead of leaving them on disk forever
+    await handleImageFileCleanup(uploadedFiles);
+    sendError(res, error, "uploadConversationImages controller");
   }
 };
 
@@ -246,8 +319,7 @@ export const addMembers = async (req, res) => {
 
     res.status(200).json(conversation);
   } catch (error) {
-    console.log("Error in addMembers controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "addMembers controller");
   }
 };
 
@@ -277,8 +349,7 @@ export const removeMember = async (req, res) => {
 
     res.status(200).json({ ...conversation.toObject(), conversationDeleted });
   } catch (error) {
-    console.log("Error in removeMember controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "removeMember controller");
   }
 };
 
@@ -301,7 +372,6 @@ export const updateConversation = async (req, res) => {
 
     res.status(200).json(conversation);
   } catch (error) {
-    console.log("Error in updateConversation controller: ", error.message);
-    res.status(400).json({ error: error.message });
+    sendError(res, error, "updateConversation controller");
   }
 };

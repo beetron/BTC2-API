@@ -40,7 +40,7 @@ A secure WebSocket-enabled REST API for real-time messaging — direct and group
 - Update nickname/unique ID/profile image/email/password
 - Forgot username, forgot password
 - Push notifications via Firebase (sent when a recipient has no active socket connection)
-- Real-time delivery via Socket.IO, with soft-enforced JWT handshake auth
+- Real-time delivery via Socket.IO, with JWT handshake auth (no unauthenticated sockets)
 - Delete account (cascades conversations, messages, and friend references)
 - **Admin tools** for one admin account: list/search users, create users directly, edit username/email/unique ID/password, delete everything a user sent, delete users
 - **Session revocation**: admin edits and account deletion sign the user out on every device (REST and socket)
@@ -102,16 +102,6 @@ ADMIN_EMAIL=admin@yourapp.com
 ENABLE_METRICS=false          # set to true to enable metrics collection
 METRICS_PORT=9090             # port for Prometheus metrics endpoint (default: 9090)
 
-# Socket.IO handshake auth -- rollout flag, meant to be temporary.
-# false: a missing/invalid JWT is tolerated (soft enforcement, back-compat
-#        with pre-JWT clients).
-# true:  a missing/invalid/expired JWT rejects the handshake outright.
-# Flip this once every live client (web + mobile) reliably sends
-# `auth: { token }` on connect, then remove the flag and the fallback
-# path in src/socket/socket.js entirely -- it's scaffolding for the
-# migration, not a permanent runtime setting.
-SOCKET_REQUIRE_AUTH=false
-
 # Admin account: the Mongo _id of the one user allowed to call /admin/*.
 # Unset = admin endpoints disabled.
 ADMIN_USER_ID=
@@ -131,11 +121,13 @@ NODE_ENV=development  # for development
 
 - API version is tracked in `package.json` and used for docker image versioning.
 - Profile images are stored in `/src/uploads/images` via `multer` + `sharp`; message/conversation images share the same storage with automatic cleanup once no message references them.
-- Push notifications (Firebase) are only sent to a recipient with no active socket connection — connected clients get the update over Socket.IO instead.
+- Push notifications (Firebase) are only sent for new messages (never for edits or deletes), and only to a recipient with no active socket connection; connected clients get the update over Socket.IO instead.
 - User reports are emailed to administrators for moderation.
 - Account deletion cascades: direct conversations are deleted outright; group conversations are left through the normal leave rules (owner succession, empty groups dissolve), so remaining members keep their history. Self-delete and admin delete share `services/userDeletionService.js`.
 - **Admin**: `/admin/*` is available only to the account whose `_id` is in `ADMIN_USER_ID` (no database role field; anyone else gets a `404`). Endpoints are listed under [Admin](#admin-admin) in the API reference. Signup and admin create share `services/userCreationService.js`.
 - **Rate limiting** (`express-rate-limit`, in-memory, per client IP): login failures (per IP and per username), signup, password/username recovery, refresh, and admin. Over the limit returns `429 { error }`. Use a shared store such as Redis if the API runs on more than one pod.
+- **Errors** always have the shape `{ error }`. Expected failures carry a readable message (`400` bad input or not allowed, `404` not found, `409` conflict). Unexpected failures are logged and answered with `400 { error: "Request failed" }`, never with internal details; they are not `500` yet because btc2-web signs the user out on any `403` or `500` (see `src/utility/httpError.js`).
+- **Graceful shutdown**: on `SIGTERM` the API stops accepting connections, lets requests in progress finish, disconnects sockets and closes MongoDB, exiting within 20 seconds. The Docker image runs `node server.js` directly so the signal reaches Node.
 - **Prometheus metrics** (optional) available on `METRICS_PORT` when `ENABLE_METRICS=true`
   - HTTP request metrics (duration, total count)
   - Custom API metrics (messages, friend requests, user registrations)
@@ -165,7 +157,15 @@ Direct (1:1) and group chats share a single `Conversation` model.
 - Adding someone to a group requires the *actor* to be friends with them — there's no requirement that all group members be mutual friends with each other (same model most chat apps use: whoever adds you vouches for you, not everyone already knows everyone).
 - Message history is **cursor-paginated** (`GET /conversations/:id/messages`), newest page first.
 - Each member has a per-conversation read state: `unreadCount` (reset on load) and an optional `clearedAt` (per-viewer "delete history" — for a direct conversation, once both members have cleared everything, the conversation and its messages are deleted outright; group history clearing never deletes the conversation for other members).
-- The legacy `/messages/*` routes (`send/:id`, `get/:id`, `upload/:id`, `delete/:id`) still work and are backed by the same conversation model under the hood (they find-or-create the direct conversation for you) — kept for simple 1:1 messaging and older clients that haven't migrated to the `/conversations` endpoints.
+- **Sending** (`POST /conversations/:id/messages`): `message` must be a non-empty string of at most 10,000 characters. The response includes the stored message (`message`, with the server's `_id` and `createdAt`), so a client can show it without refetching: a `200` always means the message is saved.
+- **Retries without duplicates**: a client may send an optional `clientMessageId` (1 to 64 letters, digits, `-` or `_`, e.g. a UUID) with a text message or as a form field with an image upload. Sending the same `clientMessageId` again returns the message already stored instead of creating a second one, so retrying after a lost response is safe. Reusing one for a different conversation is `409`.
+- **Quote reply**: send `replyToId` (a message in the same conversation that is not deleted) with a text message or as an upload form field. Every reply in a response carries a `replyTo` preview: `{ _id, senderId, message, hasImages, deleted, unavailable }`, with `message` cut to 200 characters. The preview is read live, so it follows edits and deletes of the original; `unavailable: true` means the original no longer exists. Messages that are not replies have no `replyTo` field.
+- **Edit** (`PATCH /conversations/:id/messages/:messageId`): the sender only, any time, same text rules as sending. The text is overwritten (no history) and `editedAt` is set so clients can show an "edited" label.
+- **Delete for everyone** (`DELETE /conversations/:id/messages/:messageId`): the sender only; a group owner cannot delete other members' messages. The message becomes a tombstone (`message: null`, no images, no reply, `deletedAt` set), its image files are removed, and it stops counting as unread for anyone who had not read it. History leaves tombstones out by default, so clients that predate this simply stop showing the message; pass `?includeDeleted=1` to get them and show a "message deleted" placeholder. This is separate from `DELETE /messages/delete/:id`, which only clears the caller's own view.
+- **Changes feed** (`GET /conversations/:id/messages/changes`): every message created, edited or deleted after `?since=<ISO date>`, oldest change first, tombstones included, so a client can catch up after reconnecting (a refetch of the newest page misses edits to older messages). Returns `{ messages, nextCursor, hasMore }`; pass `?cursor=<nextCursor>` for the next page and, later, for the next sync. `nextCursor` is `null` when nothing changed. `limit` defaults to 100, max 200.
+- `GET /config` returns `features` (`clientMessageId`, `reply`, `edit`, `delete`, `messageChanges`) so a client can hide UI the API does not support.
+- **The sender's other devices**: by default the `conversation:message` event skips every socket of the sender. A client that sends its socket id in an `X-Socket-Id` header only skips that socket, so the sender's other open devices get the event too.
+- The original `/messages/send/:id`, `/messages/get/:id` and `/messages/upload/:id` routes were removed in 2.0.0 (sending, uploading and history all go through `/conversations`). `/messages/delete/:id` (clear history) and `/messages/uploads/images/:filename` remain.
 
 ### 🔗 Link Previews
 
@@ -180,16 +180,14 @@ Direct (1:1) and group chats share a single `Conversation` model.
 ### 🔌 Socket.IO
 
 - Path: `/socket.io` (versioning handled at the infrastructure layer via Kubernetes/Nginx).
-- Handshake auth: soft-enforced by default, controlled by `SOCKET_REQUIRE_AUTH` (see [Environment Configuration](#️-environment-configuration)). A valid `auth: { token }` always works regardless of the flag; the flag only controls what happens when it's missing/invalid.
-- A correctly signed token for a deleted account, or one issued before the user's `sessionsRevokedAt`, is rejected with `"Unauthorized"` even when `SOCKET_REQUIRE_AUTH=false`.
+- Handshake auth: every socket must send a valid access token as `auth: { token }`. A missing, invalid or expired token, or one for a deleted account or issued before the user's `sessionsRevokedAt`, is rejected with `"Unauthorized"` (the message clients refresh their token on). The identity comes only from the token.
 - On connect, a socket is registered by `userId` (supports multiple devices per user) and joined to a room per active conversation, so a group broadcast is a single `io.to(conversationId).emit(...)` instead of a per-member socket lookup.
 - Each socket also joins a `user:<userId>` room, so all of one user's devices can be disconnected at once (admin edits, account deletion).
 - Events emitted to clients:
-  - `conversation:message` — `{ conversationId, messageId }`, new message in a direct or group conversation. After an admin deletes a user's messages it is sent as `{ conversationId }` only, so clients refetch the thread.
+  - `conversation:message`: `{ conversationId, messageId, senderId, clientMessageId, action }`, a message in a direct or group conversation was created, edited or deleted (`action` is `"created"`, `"edited"` or `"deleted"`; `clientMessageId` is `null` when the sender gave none). Clients that ignore `action` just refetch, which already shows edits and drops deleted messages. After an admin deletes a user's messages it is sent as `{ conversationId }` only, so clients refetch the thread.
   - `conversation:memberAdded` — `{ conversationId, memberIds }`
   - `conversation:memberRemoved` — `{ conversationId, userId }`
   - `conversation:updated` — `{ conversationId, name, avatar }`, group renamed/avatar changed
-  - `newMessageSignal` — legacy signal, still emitted alongside the above for clients sending via `/messages/*`
 - All communication is over HTTP/WS (no SSL/HTTPS at this layer — see [Deployment](#-deployment)).
 
 ## 📡 API Reference
@@ -238,21 +236,21 @@ Direct (1:1) and group chats share a single `Conversation` model.
 | GET | `/:id` | Full detail for one conversation, with member profiles |
 | POST | `/direct` | Find-or-create the direct conversation with another user |
 | POST | `/group` | Create a group conversation |
-| GET | `/:id/messages` | Cursor-paginated message history |
-| POST | `/:id/messages` | Send a text message |
-| POST | `/:id/upload` | Upload image(s) into the conversation |
+| GET | `/:id/messages` | Cursor-paginated message history (`?cursor=`, `?limit=`, `?includeDeleted=1` for tombstones) |
+| GET | `/:id/messages/changes` | Messages created, edited or deleted since `?since=` or `?cursor=` |
+| POST | `/:id/messages` | Send a text message: `{ message, clientMessageId?, replyToId? }`, returns `{ success, messageId, message }` |
+| PATCH | `/:id/messages/:messageId` | Edit your own message: `{ message }`, returns `{ success, message }` |
+| DELETE | `/:id/messages/:messageId` | Delete your own message for everyone, returns `{ success, message }` (the tombstone) |
+| POST | `/:id/upload` | Upload image(s) into the conversation (form fields `messageImages`, optional `clientMessageId` and `replyToId`), returns `{ success, messageId, message }` |
 | PUT | `/:id/members` | Add member(s) to a group |
 | DELETE | `/:id/members/:userId` | Remove a member (or leave, for self) |
 | PUT | `/:id` | Rename a group / update its avatar |
 
-### Legacy Messages — `/messages`
+### Messages: `/messages`
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/send/:id` | Send a message to a user (direct conversation) |
-| POST | `/upload/:id` | Upload image(s) to a user |
-| GET | `/get/:id` | Get conversation history (capped, non-paginated) |
-| GET | `/uploads/images/:filename` | Get a message image (shared by both `/messages` and `/conversations` uploads) |
+| GET | `/uploads/images/:filename` | Get a message image (direct and group uploads) |
 | DELETE | `/delete/:id` | Clear history up to a message |
 
 ### Link Preview — `/link-preview`

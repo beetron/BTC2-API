@@ -32,7 +32,9 @@ const corsOptions = {
   origin: process.env.CORS_ORIGIN?.split(",") || [],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  // X-Socket-Id: optional, lets a sender's other devices get the
+  // conversation:message event for their own message (messageDelivery.js)
+  allowedHeaders: ["Content-Type", "Authorization", "X-Socket-Id"],
 };
 
 // How many reverse proxies sit in front of the API (Kubernetes ingress = 1).
@@ -74,9 +76,20 @@ app.get("/health", (req, res) => {
   res.status(200).send("OK");
 });
 
+// Features a client can check for before showing the matching UI, so a
+// newer client still works against an older API
+export const API_FEATURES = [
+  "clientMessageId",
+  "reply",
+  "edit",
+  "delete",
+  "messageChanges",
+];
+
 app.get("/config", (req, res) => {
   res.json({
     apiVersion: API_VERSION,
+    features: API_FEATURES,
   });
 });
 

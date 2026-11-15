@@ -72,10 +72,21 @@ conversationSchema.statics.buildDirectKey = function (userIdA, userIdB) {
   return `${a}_${b}`;
 };
 
-conversationSchema.methods.isActiveMember = function (userId) {
-  return this.members.some(
+// Works on plain objects too, so callers can use .lean() queries
+conversationSchema.statics.hasActiveMember = function (conversation, userId) {
+  return conversation.members.some(
     (m) => m.userId.toString() === userId.toString() && !m.leftAt
   );
+};
+
+// Query filter matching conversations the user is currently a member of.
+// leftAt: null also matches members saved before leftAt existed.
+conversationSchema.statics.activeMemberFilter = function (userId) {
+  return { members: { $elemMatch: { userId, leftAt: null } } };
+};
+
+conversationSchema.methods.isActiveMember = function (userId) {
+  return this.constructor.hasActiveMember(this, userId);
 };
 
 conversationSchema.methods.getMemberRole = function (userId) {

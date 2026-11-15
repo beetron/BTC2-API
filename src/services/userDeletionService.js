@@ -1,7 +1,6 @@
 import fs from "fs";
 import path from "path";
 import User from "../models/user.model.js";
-import UserConversation from "../models/userConversation.model.js";
 import Message from "../models/message.model.js";
 import Conversation from "../models/conversation.model.js";
 import ConversationReadState from "../models/conversationReadState.model.js";
@@ -99,7 +98,7 @@ export const deleteUserAccount = async (userId) => {
   );
   await ConversationReadState.deleteMany({ userId: user._id });
 
-  // Legacy cleanup for any pair not yet migrated to the new model.
+  // Messages stored before conversations existed have no conversationId
   const legacyMessages = await Message.find({
     $or: [{ senderId: user._id }, { receiverId: user._id }],
     conversationId: null,
@@ -108,9 +107,6 @@ export const deleteUserAccount = async (userId) => {
   await Message.deleteMany({
     $or: [{ senderId: user._id }, { receiverId: user._id }],
     conversationId: null,
-  });
-  await UserConversation.deleteMany({
-    $or: [{ senderId: user._id }, { receiverId: user._id }],
   });
 
   // Cleanup unreferenced image files
