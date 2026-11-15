@@ -21,8 +21,7 @@ const conversationReadStateSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    // Per-user "cleared my view up to here" marker, replaces
-    // UserConversation.deleteFromTimestamp.
+    // Per-user "cleared my view up to here" marker
     clearedAt: {
       type: Date,
       default: null,

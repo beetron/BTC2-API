@@ -1,5 +1,6 @@
 import { test, describe, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import mongoose from "mongoose";
 import {
   startTestApp,
   stopTestApp,
@@ -104,13 +105,22 @@ describe("direct conversations", () => {
     // Bob must not be able to recreate it and message Alice again
     const reopened = await openDirect(as.bob, alice._id);
     assert.notEqual(reopened.status, 200, "blocked user reopened the conversation");
+  });
 
-    // Nor through the legacy send endpoint
-    const legacy = await api()
-      .post(`/messages/send/${alice._id}`)
-      .set(as.bob)
-      .send({ message: "still here" });
-    assert.notEqual(legacy.status, 200, "blocked user sent a message via legacy endpoint");
+  test("blocking also deletes messages from before conversations existed", async () => {
+    const { alice, bob, mallory, as } = await setupUsers();
+    const Message = mongoose.model("Message");
+    // Stored the old way: no conversationId, just sender and receiver
+    await Message.create([
+      { senderId: alice._id, receiverId: bob._id, message: "old 1" },
+      { senderId: bob._id, receiverId: alice._id, message: "old 2" },
+      { senderId: alice._id, receiverId: mallory._id, message: "someone else" },
+    ]);
+
+    await api().put(`/users/blockuser/${bob._id}`).set(as.alice).expect(200);
+
+    const left = await Message.find({ conversationId: null }).lean();
+    assert.deepEqual(left.map((m) => m.message), ["someone else"]);
   });
 
   test("the blocker cannot reopen the conversation either", async () => {

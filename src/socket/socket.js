@@ -20,64 +20,39 @@ const io = new Server(server, {
   },
 });
 
-// Soft-enforced handshake auth. Prefers a verified JWT (sent as
-// `auth: { token }` by the socket.io client) and falls back to the legacy
-// unauthenticated `userId` query param while older client builds are still
-// in the field. Set SOCKET_REQUIRE_AUTH=true once every client sends a
-// token, to reject unauthenticated/invalid handshakes outright.
-const REQUIRE_SOCKET_AUTH =
-  process.env.SOCKET_REQUIRE_AUTH?.toLowerCase() === "true";
-
-io.use(async (socket, next) => {
+// Handshake auth: every socket must send a valid access token as
+// `auth: { token }` (both clients do). There is no fallback: a missing,
+// invalid or expired token, or one for a deleted or signed-out account, is
+// rejected with "Unauthorized", the message clients refresh their token on.
+// Identity comes only from the verified token, never from anything else
+// the client sends, so nobody can listen in on another user's rooms.
+export const authenticateSocket = async (socket, next) => {
   const token = socket.handshake.auth?.token;
+  if (!token) return next(new Error("Unauthorized"));
 
-  if (token) {
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (error) {
-      decoded = null;
-      console.log(`Socket auth failed for ${socket.id}: ${error.message}`);
-      if (REQUIRE_SOCKET_AUTH) {
-        return next(new Error("Unauthorized"));
-      }
-      // Fall through to the legacy path below during the rollout window.
-    }
-
-    if (decoded) {
-      // A correctly signed token for a deleted or signed-out account is
-      // rejected outright, flag or not: it is a known-bad session, not an
-      // old client. "Unauthorized" is the message clients refresh on.
-      try {
-        const user = await User.findById(decoded.userId).select(
-          "_id sessionsRevokedAt"
-        );
-        if (!user || isAccessTokenRevoked(user, decoded)) {
-          return next(new Error("Unauthorized"));
-        }
-      } catch (error) {
-        console.log(`Socket user lookup failed for ${socket.id}: ${error.message}`);
-        return next(new Error("Unauthorized"));
-      }
-
-      socket.data.userId = decoded.userId;
-      socket.data.authenticated = true;
-      return next();
-    }
-  } else if (REQUIRE_SOCKET_AUTH) {
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch (error) {
+    console.log(`Socket auth failed for ${socket.id}: ${error.message}`);
     return next(new Error("Unauthorized"));
   }
 
-  const legacyUserId = socket.handshake.query.userId;
-  socket.data.userId = legacyUserId;
-  socket.data.authenticated = false;
-  if (legacyUserId && legacyUserId !== "undefined") {
-    console.log(
-      `Socket ${socket.id} connected without a verified token (legacy client) - userId ${legacyUserId}`
-    );
+  try {
+    const user = await User.findById(decoded.userId).select("_id sessionsRevokedAt");
+    if (!user || isAccessTokenRevoked(user, decoded)) {
+      return next(new Error("Unauthorized"));
+    }
+  } catch (error) {
+    console.log(`Socket user lookup failed for ${socket.id}: ${error.message}`);
+    return next(new Error("Unauthorized"));
   }
-  next();
-});
+
+  socket.data.userId = decoded.userId;
+  return next();
+};
+
+io.use(authenticateSocket);
 
 // Get all socket IDs for a receiver (handles multiple devices)
 export const getReceiverSocketIds = (receiverId) => {

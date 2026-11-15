@@ -333,49 +333,39 @@ describe("image uploads", () => {
   });
 });
 
-describe("legacy /messages endpoints", () => {
-  test("send, upload and get are marked deprecated", async () => {
+describe("/messages endpoints", () => {
+  test("the old send, upload and get routes are gone and store nothing", async () => {
     const { alice, bob, as } = await setupUsers();
 
-    const sent = await api()
+    await api()
       .post(`/messages/send/${bob._id}`)
       .set(as.alice)
       .send({ message: "old client" })
-      .expect(200);
-    assert.match(sent.headers.deprecation ?? "", /^@\d+$/);
-    assert.deepEqual(sent.body, { success: true });
-
-    const uploaded = await api()
+      .expect(404);
+    await api()
       .post(`/messages/upload/${bob._id}`)
       .set(as.alice)
       .attach("messageImages", Buffer.from("not really a png"), {
         filename: "photo.png",
         contentType: "image/png",
       })
-      .expect(200);
-    assert.match(uploaded.headers.deprecation ?? "", /^@\d+$/);
+      .expect(404);
+    await api().get(`/messages/get/${alice._id}`).set(as.bob).expect(404);
 
-    const read = await api().get(`/messages/get/${alice._id}`).set(as.bob).expect(200);
-    assert.match(read.headers.deprecation ?? "", /^@\d+$/);
-    assert.equal(read.body.length, 2);
-
-    // Clearing history is still in use and not deprecated
-    const cleared = await api().delete(`/messages/delete/${read.body[0]._id}`).set(as.bob).expect(200);
-    assert.equal(cleared.headers.deprecation, undefined);
+    // No conversation, message or file was created along the way
+    const list = await api().get("/conversations").set(as.alice).expect(200);
+    assert.equal(list.body.length, 0);
+    assert.deepEqual(newUploads(), []);
   });
 
-  test("sending without a message is a 400 and stores nothing", async () => {
-    const { alice, bob, as } = await setupUsers();
+  test("clearing history still works and checks its id", async () => {
+    const { bob, as } = await setupUsers();
+    const id = await openDirect(as.alice, bob._id);
+    const sent = await send(as.alice, id, { message: "hi" }).expect(200);
 
-    await api().post(`/messages/send/${bob._id}`).set(as.alice).send({}).expect(400);
+    await api().delete(`/messages/delete/${sent.body.messageId}`).set(as.alice).expect(200);
+    assert.equal((await readMessages(as.alice, id).expect(200)).body.messages.length, 0);
 
-    const read = await api().get(`/messages/get/${alice._id}`).set(as.bob).expect(200);
-    assert.equal(read.body.length, 0);
-  });
-
-  test("a malformed user id is a 400", async () => {
-    const { as } = await setupUsers();
-    await api().post("/messages/send/abc").set(as.alice).send({ message: "hi" }).expect(400);
     await api().delete("/messages/delete/abc").set(as.alice).expect(400);
   });
 });

@@ -2,7 +2,6 @@ import mongoose from "mongoose";
 import Message from "../models/message.model.js";
 import Conversation from "../models/conversation.model.js";
 import ConversationReadState from "../models/conversationReadState.model.js";
-import UserConversation from "../models/userConversation.model.js";
 import { handleImageFileCleanup } from "../utility/imageCleanup.js";
 import { io } from "../socket/socket.js";
 
@@ -64,7 +63,7 @@ export const purgeMessagesSentBy = async (userId, { notify = true } = {}) => {
   // that are being deleted underneath it.
   for (;;) {
     const batch = await Message.find({ senderId })
-      .select("_id imageFiles conversationId")
+      .select("_id imageFiles")
       .limit(BATCH_SIZE)
       .lean();
     if (batch.length === 0) break;
@@ -74,19 +73,6 @@ export const purgeMessagesSentBy = async (userId, { notify = true } = {}) => {
 
     const result = await Message.deleteMany({ _id: { $in: ids } });
     deletedCount += result.deletedCount;
-
-    // Pre-migration messages are also referenced from UserConversation
-    const legacyIds = batch.filter((m) => !m.conversationId).map((m) => m._id);
-    if (legacyIds.length > 0) {
-      await UserConversation.updateMany(
-        { messages: { $in: legacyIds } },
-        { $pull: { messages: { $in: legacyIds } } }
-      );
-      await UserConversation.updateMany(
-        { lastReadMessageId: { $in: legacyIds } },
-        { $set: { lastReadMessageId: null } }
-      );
-    }
   }
 
   await repairReadStates(readStates, markerById, senderId, conversationIds);

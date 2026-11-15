@@ -120,8 +120,8 @@ const isBlockedEitherWay = async (userIdA, userIdB) =>
 
 export const findOrCreateDirectConversation = async (userIdA, userIdB) => {
   // Blocking deletes the direct conversation; without this check either
-  // side could simply recreate it (POST /conversations/direct or the legacy
-  // /messages/send and /messages/upload endpoints) and keep messaging.
+  // side could simply recreate it with POST /conversations/direct and
+  // keep messaging.
   if (await isBlockedEitherWay(userIdA, userIdB)) {
     throw new HttpError(400, "Cannot start a conversation with this user");
   }
@@ -315,21 +315,7 @@ export const getConversationMessages = async (
   };
 };
 
-// Legacy-compatible read: plain array, capped, no cursor -- matches the
-// exact response shape of GET /messages/get/:id before this migration.
-export const getDirectConversationMessagesLegacy = async (
-  conversationId,
-  userId,
-  limit = 200
-) => {
-  const { messages } = await getConversationMessages(conversationId, userId, {
-    limit,
-  });
-  return messages;
-};
-
-// Per-user "clear history up to this message" -- mirrors the old
-// UserConversation.deleteMessagesUpTo semantics. For direct conversations,
+// Per-user "clear history up to this message". For direct conversations,
 // once both members have cleared everything, the conversation, its
 // messages, and both read states are removed entirely (it's fully
 // reconstructible on demand via findOrCreateDirectConversation). Group

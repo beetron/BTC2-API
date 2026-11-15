@@ -1,5 +1,4 @@
 import User from "../models/user.model.js";
-import UserConversation from "../models/userConversation.model.js";
 import Conversation from "../models/conversation.model.js";
 import ConversationReadState from "../models/conversationReadState.model.js";
 import fs from "fs-extra";
@@ -564,26 +563,20 @@ export const blockUser = async (req, res) => {
         await handleImageFileCleanup(allImageFiles);
       }
 
-      // Legacy cleanup for any pair not yet migrated to the new model.
-      const legacyConversationA = await UserConversation.findOne({
-        senderId: userId,
-        receiverId: friendToBlock._id,
-      });
-      const legacyConversationB = await UserConversation.findOne({
-        senderId: friendToBlock._id,
-        receiverId: userId,
-      });
-      const legacyMessageIds = [
-        ...(legacyConversationA?.messages || []),
-        ...(legacyConversationB?.messages || []),
-      ];
-      if (legacyMessageIds.length > 0) {
-        const legacyMessages = await Message.find({ _id: { $in: legacyMessageIds } });
-        await Message.deleteMany({ _id: { $in: legacyMessageIds } });
-        await handleImageFileCleanup(legacyMessages.flatMap((m) => m.imageFiles || []));
+      // Messages stored before conversations existed have no conversationId;
+      // any left between the two users go too
+      const legacyFilter = {
+        conversationId: null,
+        $or: [
+          { senderId: userId, receiverId: friendToBlock._id },
+          { senderId: friendToBlock._id, receiverId: userId },
+        ],
+      };
+      const legacyImageFiles = await Message.distinct("imageFiles", legacyFilter);
+      const legacyResult = await Message.deleteMany(legacyFilter);
+      if (legacyResult.deletedCount > 0) {
+        await handleImageFileCleanup(legacyImageFiles);
       }
-      if (legacyConversationA) await legacyConversationA.deleteOne();
-      if (legacyConversationB) await legacyConversationB.deleteOne();
 
       console.log(
         `User ${userId} blocked ${friendId} - removed friendship, cleared friend requests and deleted conversations/messages`

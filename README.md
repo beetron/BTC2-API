@@ -40,7 +40,7 @@ A secure WebSocket-enabled REST API for real-time messaging — direct and group
 - Update nickname/unique ID/profile image/email/password
 - Forgot username, forgot password
 - Push notifications via Firebase (sent when a recipient has no active socket connection)
-- Real-time delivery via Socket.IO, with soft-enforced JWT handshake auth
+- Real-time delivery via Socket.IO, with JWT handshake auth (no unauthenticated sockets)
 - Delete account (cascades conversations, messages, and friend references)
 - **Admin tools** for one admin account: list/search users, create users directly, edit username/email/unique ID/password, delete everything a user sent, delete users
 - **Session revocation**: admin edits and account deletion sign the user out on every device (REST and socket)
@@ -101,15 +101,6 @@ ADMIN_EMAIL=admin@yourapp.com
 # Prometheus metrics configuration
 ENABLE_METRICS=false          # set to true to enable metrics collection
 METRICS_PORT=9090             # port for Prometheus metrics endpoint (default: 9090)
-
-# Socket.IO handshake auth -- rollout flag, meant to be temporary.
-# false: a missing/invalid JWT is tolerated (soft enforcement, back-compat
-#        with pre-JWT clients).
-# true:  a missing/invalid/expired JWT rejects the handshake outright.
-# Production runs with true since 1.5.0 (every web and mobile build sends
-# `auth: { token }`). The flag and the fallback path in
-# src/socket/socket.js are removed in 2.0.0.
-SOCKET_REQUIRE_AUTH=true
 
 # Admin account: the Mongo _id of the one user allowed to call /admin/*.
 # Unset = admin endpoints disabled.
@@ -174,7 +165,7 @@ Direct (1:1) and group chats share a single `Conversation` model.
 - **Changes feed** (`GET /conversations/:id/messages/changes`): every message created, edited or deleted after `?since=<ISO date>`, oldest change first, tombstones included, so a client can catch up after reconnecting (a refetch of the newest page misses edits to older messages). Returns `{ messages, nextCursor, hasMore }`; pass `?cursor=<nextCursor>` for the next page and, later, for the next sync. `nextCursor` is `null` when nothing changed. `limit` defaults to 100, max 200.
 - `GET /config` returns `features` (`clientMessageId`, `reply`, `edit`, `delete`, `messageChanges`) so a client can hide UI the API does not support.
 - **The sender's other devices**: by default the `conversation:message` event skips every socket of the sender. A client that sends its socket id in an `X-Socket-Id` header only skips that socket, so the sender's other open devices get the event too.
-- The legacy `/messages/*` routes `send/:id`, `get/:id` and `upload/:id` are **deprecated** (they answer with a `Deprecation` header and every call is logged) and will be removed in 2.0.0. No current client uses them. `delete/:id` (clear history) and `uploads/images/:filename` are still in use and stay.
+- The original `/messages/send/:id`, `/messages/get/:id` and `/messages/upload/:id` routes were removed in 2.0.0 (sending, uploading and history all go through `/conversations`). `/messages/delete/:id` (clear history) and `/messages/uploads/images/:filename` remain.
 
 ### 🔗 Link Previews
 
@@ -189,8 +180,7 @@ Direct (1:1) and group chats share a single `Conversation` model.
 ### 🔌 Socket.IO
 
 - Path: `/socket.io` (versioning handled at the infrastructure layer via Kubernetes/Nginx).
-- Handshake auth: soft-enforced by default, controlled by `SOCKET_REQUIRE_AUTH` (see [Environment Configuration](#️-environment-configuration)). A valid `auth: { token }` always works regardless of the flag; the flag only controls what happens when it's missing/invalid.
-- A correctly signed token for a deleted account, or one issued before the user's `sessionsRevokedAt`, is rejected with `"Unauthorized"` even when `SOCKET_REQUIRE_AUTH=false`.
+- Handshake auth: every socket must send a valid access token as `auth: { token }`. A missing, invalid or expired token, or one for a deleted account or issued before the user's `sessionsRevokedAt`, is rejected with `"Unauthorized"` (the message clients refresh their token on). The identity comes only from the token.
 - On connect, a socket is registered by `userId` (supports multiple devices per user) and joined to a room per active conversation, so a group broadcast is a single `io.to(conversationId).emit(...)` instead of a per-member socket lookup.
 - Each socket also joins a `user:<userId>` room, so all of one user's devices can be disconnected at once (admin edits, account deletion).
 - Events emitted to clients:
@@ -198,7 +188,6 @@ Direct (1:1) and group chats share a single `Conversation` model.
   - `conversation:memberAdded` — `{ conversationId, memberIds }`
   - `conversation:memberRemoved` — `{ conversationId, userId }`
   - `conversation:updated` — `{ conversationId, name, avatar }`, group renamed/avatar changed
-  - `newMessageSignal` — legacy signal, still emitted alongside the above for clients sending via `/messages/*`
 - All communication is over HTTP/WS (no SSL/HTTPS at this layer — see [Deployment](#-deployment)).
 
 ## 📡 API Reference
@@ -257,14 +246,11 @@ Direct (1:1) and group chats share a single `Conversation` model.
 | DELETE | `/:id/members/:userId` | Remove a member (or leave, for self) |
 | PUT | `/:id` | Rename a group / update its avatar |
 
-### Legacy Messages — `/messages`
+### Messages: `/messages`
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/send/:id` | Deprecated. Send a message to a user (direct conversation) |
-| POST | `/upload/:id` | Deprecated. Upload image(s) to a user |
-| GET | `/get/:id` | Deprecated. Get conversation history (capped, non-paginated) |
-| GET | `/uploads/images/:filename` | Get a message image (shared by both `/messages` and `/conversations` uploads) |
+| GET | `/uploads/images/:filename` | Get a message image (direct and group uploads) |
 | DELETE | `/delete/:id` | Clear history up to a message |
 
 ### Link Preview — `/link-preview`
