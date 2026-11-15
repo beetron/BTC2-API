@@ -31,8 +31,10 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const filename = uuidv4() + path.extname(file.originalname);
-    cb(null, filename);
+    // The extension is the only part taken from the client: keep letters,
+    // digits and the dot, so it can never carry a path, space or line break
+    const extension = path.extname(file.originalname).replace(/[^A-Za-z0-9.]/g, "");
+    cb(null, uuidv4() + extension);
   },
 });
 
@@ -75,7 +77,11 @@ export const compressImage = async (filename) => {
     if (metadata.hasAlpha) pipeline = pipeline.flatten({ background: "#ffffff" });
     output = await pipeline.jpeg({ quality: JPEG_QUALITY }).toBuffer();
   } catch (error) {
-    console.warn(`Keeping ${filename} as uploaded, could not compress it: ${error.message}`);
+    // Line breaks removed: the filename's extension and sharp's message
+    // (which repeats the path) come from the uploaded file, and must not
+    // be able to forge extra log lines
+    const detail = `${filename}: ${error.message}`.replace(/\n|\r/g, "");
+    console.warn(`Keeping upload as sent, could not compress it (${detail})`);
     return filename;
   }
 
