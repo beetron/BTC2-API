@@ -82,8 +82,12 @@ export const validateMessageInput = ({
 // A reply may only quote a live message of the same conversation. The
 // same error for "does not exist" and "is in another conversation", so a
 // replyToId cannot be used to probe for messages elsewhere.
+//
+// replyToId comes from the request body. validateMessageInput has already
+// required a 24-character hex id; $eq also makes the query itself treat
+// it as a plain value, never as an operator object.
 const assertCanReplyTo = async (replyToId, conversationId) => {
-  const target = await Message.findOne({ _id: replyToId, conversationId })
+  const target = await Message.findOne({ _id: { $eq: replyToId }, conversationId })
     .select("deletedAt")
     .lean();
   if (!target) throw new HttpError(400, "Cannot reply to that message");
@@ -94,8 +98,15 @@ const assertCanReplyTo = async (replyToId, conversationId) => {
 // clientMessageId reused for a different conversation is a client bug, not
 // a retry, so it is refused rather than silently answered with the other
 // conversation's message.
+//
+// clientMessageId comes from the request body. validateMessageInput has
+// already required a short [A-Za-z0-9_-] string; $eq also makes the query
+// itself treat it as a plain value, never as an operator object.
 const findByClientMessageId = async (senderId, clientMessageId, conversationId) => {
-  const existing = await Message.findOne({ senderId, clientMessageId }).lean();
+  const existing = await Message.findOne({
+    senderId,
+    clientMessageId: { $eq: clientMessageId },
+  }).lean();
   if (!existing) return null;
   if (existing.conversationId?.toString() !== conversationId.toString()) {
     throw new HttpError(409, "clientMessageId was already used for another message");
