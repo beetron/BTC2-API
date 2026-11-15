@@ -1,6 +1,7 @@
 version: 2
 updates:
-  # npm dependencies. PRs target development so they go through the normal PR Review flow.
+  # npm dependencies. PRs target development, where the PR Review workflow
+  # runs on them, so every update is linted, tested and audited before merging.
   - package-ecosystem: npm
     directory: /
     target-branch: development

@@ -1,11 +1,13 @@
 name: PR Review
 
 # Runs on every PR into main (including each new push to the PR's branch,
-# e.g. development) and on pushes to main so CodeQL has a baseline to compare against.
+# e.g. development), on PRs into development (Dependabot's update PRs), and
+# on pushes to main so CodeQL has a baseline to compare against.
 on:
   pull_request:
     branches:
       - main
+      - development
   push:
     branches:
       - main
