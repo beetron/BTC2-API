@@ -88,6 +88,8 @@ export const API_FEATURES = [
   "replyImage",
   // imagesExpiredAt: photos older than IMAGE_RETENTION_DAYS are deleted
   "imageExpiry",
+  // POST /conversations/:id/read: mark read up to a message on screen
+  "markRead",
 ];
 
 app.get("/config", (req, res) => {

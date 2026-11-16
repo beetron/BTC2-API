@@ -303,6 +303,95 @@ describe("read state", () => {
   });
 });
 
+describe("mark read", () => {
+  const markRead = (headers, conversationId, messageId) =>
+    api().post(`/conversations/${conversationId}/read`).set(headers).send({ messageId });
+
+  test("a message that arrives while the chat is open can be marked read", async () => {
+    const { alice, bob, as } = await setupUsers();
+    const id = await openDirect(as.alice, bob._id);
+    await send(as.alice, id, { message: "hi" }).expect(200);
+    await readMessages(as.bob, id).expect(200);
+
+    // Arrives while Bob has the chat open: the changes feed alone does not
+    // mark it read
+    const live = await send(as.alice, id, { message: "you there?" }).expect(200);
+    assert.equal(await unreadFor(as.bob, id), 1);
+
+    const res = await markRead(as.bob, id, live.body.messageId).expect(200);
+    assert.equal(res.body.lastReadMessageId, live.body.messageId);
+    assert.equal(res.body.unreadCount, 0);
+    assert.equal(res.body.totalUnread, 0);
+    assert.equal(await unreadFor(as.bob, id), 0);
+
+    // The chat list reads the same state
+    const friends = await api().get("/users/friendlist").set(as.bob).expect(200);
+    assert.equal(friends.body.find((f) => f._id === alice._id.toString()).unreadCount, 0);
+  });
+
+  test("messages after the marked one stay unread; totalUnread covers every chat", async () => {
+    const { bob, carol, as } = await setupUsers();
+    const direct = await openDirect(as.alice, bob._id);
+    const group = await openGroup(as.alice, [bob._id, carol._id]);
+    const first = await send(as.alice, direct, { message: "one" }).expect(200);
+    await send(as.alice, direct, { message: "two" }).expect(200);
+    await send(as.alice, direct, { message: "three" }).expect(200);
+    await send(as.alice, group, { message: "group hi" }).expect(200);
+
+    const res = await markRead(as.bob, direct, first.body.messageId).expect(200);
+    assert.equal(res.body.unreadCount, 2);
+    assert.equal(res.body.totalUnread, 3);
+    assert.equal(await unreadFor(as.bob, direct), 2);
+  });
+
+  test("the marker never moves backwards", async () => {
+    const { bob, as } = await setupUsers();
+    const id = await openDirect(as.alice, bob._id);
+    const older = await send(as.alice, id, { message: "older" }).expect(200);
+    const newer = await send(as.alice, id, { message: "newer" }).expect(200);
+
+    await markRead(as.bob, id, newer.body.messageId).expect(200);
+    // A late request for an earlier message must not mark "newer" unread
+    const res = await markRead(as.bob, id, older.body.messageId).expect(200);
+    assert.equal(res.body.lastReadMessageId, newer.body.messageId);
+    assert.equal(res.body.unreadCount, 0);
+    assert.equal(await unreadFor(as.bob, id), 0);
+  });
+
+  test("own and deleted messages after the marker are not counted", async () => {
+    const { bob, as } = await setupUsers();
+    const id = await openDirect(as.alice, bob._id);
+    const seen = await send(as.alice, id, { message: "seen" }).expect(200);
+    const gone = await send(as.alice, id, { message: "oops" }).expect(200);
+    await api()
+      .delete(`/conversations/${id}/messages/${gone.body.messageId}`)
+      .set(as.alice)
+      .expect(200);
+    await send(as.bob, id, { message: "my reply" }).expect(200);
+
+    // Bob's own reply moved his marker past "seen" already
+    const res = await markRead(as.bob, id, seen.body.messageId).expect(200);
+    assert.equal(res.body.unreadCount, 0);
+  });
+
+  test("rejects bad ids, other chats' messages and non-members", async () => {
+    const { bob, carol, as } = await setupUsers();
+    const id = await openDirect(as.alice, bob._id);
+    const other = await openDirect(as.alice, carol._id);
+    const sent = await send(as.alice, id, { message: "hi" }).expect(200);
+    const elsewhere = await send(as.alice, other, { message: "hey" }).expect(200);
+
+    await markRead(as.bob, id, "nope").expect(400);
+    await markRead(as.bob, id, undefined).expect(400);
+    await markRead(as.bob, id, elsewhere.body.messageId).expect(404);
+    await markRead(as.mallory, id, sent.body.messageId).expect(400);
+    await api()
+      .post(`/conversations/${id}/read`)
+      .send({ messageId: sent.body.messageId })
+      .expect(401);
+  });
+});
+
 describe("image uploads", () => {
   test("an upload is stored and returned like a text message", async () => {
     const { bob, as } = await setupUsers();

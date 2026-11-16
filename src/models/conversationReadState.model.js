@@ -34,6 +34,8 @@ conversationReadStateSchema.index(
   { conversationId: 1, userId: 1 },
   { unique: true }
 );
+// The unread total for one user (app icon badge, push notifications)
+conversationReadStateSchema.index({ userId: 1 });
 
 const ConversationReadState = mongoose.model(
   "ConversationReadState",

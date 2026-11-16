@@ -142,6 +142,23 @@ export const getMessageChanges = async (req, res) => {
   }
 };
 
+/////////////////////////////////////////////
+// Mark a conversation read up to a message the client has on screen
+/////////////////////////////////////////////
+export const markRead = async (req, res) => {
+  try {
+    const result = await conversationService.markConversationRead({
+      conversationId: req.params.id,
+      userId: req.user._id,
+      messageId: req.body?.messageId,
+    });
+    const totalUnread = await conversationService.getTotalUnread(req.user._id);
+    res.status(200).json({ ...result, totalUnread });
+  } catch (error) {
+    sendError(res, error, "markRead controller");
+  }
+};
+
 // Edits and deletes only send the socket event to open clients. They must
 // never send a push notification (FCM): a push is for new messages only.
 
