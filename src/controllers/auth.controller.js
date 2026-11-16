@@ -22,11 +22,17 @@ export const signup = async (req, res) => {
     const { username, password, uniqueId } = req.body;
     const email = normalizeEmail(req.body.email);
 
-    // Check if friend's uniqueId exists
-    const friend = await User.findOne({ uniqueId });
+    // Check if friend's uniqueId exists. Only a string is looked up, so an
+    // object such as { $ne: null } can't match an arbitrary user
+    const friend =
+      typeof uniqueId === "string"
+        ? await User.findOne({ uniqueId: { $eq: uniqueId } })
+        : null;
 
     if (!friend) {
-      console.log(`${timeNow}: Signup failed, friendId invalid: , ${uniqueId}`);
+      // Line breaks removed so the request can't forge extra log lines
+      const loggedId = String(uniqueId).replace(/\n|\r/g, "");
+      console.log(`${timeNow}: Signup failed, friendId invalid: ${loggedId}`);
       return res.status(400).json({ error: "Friend's Unique ID incorrect" });
     }
 
