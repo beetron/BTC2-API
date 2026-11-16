@@ -99,7 +99,7 @@ describe("protectRoute", () => {
 });
 
 describe("refresh tokens", () => {
-  test("refresh rotates the token: the new one works, the old one is single use", async () => {
+  test("refresh rotates the token: the new one works, the old one only briefly", async () => {
     const { password } = await createUser({ username: "aliceuser" });
     const { refreshToken } = await login("aliceuser", password);
 
@@ -107,7 +107,18 @@ describe("refresh tokens", () => {
     assert.ok(first.body.token);
     assert.notEqual(first.body.refreshToken, refreshToken);
 
-    // Reusing the old refresh token fails
+    // A refresh whose response was lost: the app retries with the old token
+    // and still gets a session
+    const retried = await api().post("/auth/refresh").send({ refreshToken }).expect(200);
+    assert.notEqual(retried.body.refreshToken, first.body.refreshToken);
+
+    // Once the grace period is over the old token is refused
+    const { default: RefreshToken } = await import("../src/models/refreshToken.model.js");
+    const { REFRESH_TOKEN_GRACE_MS } = await import("../src/services/tokenService.js");
+    await RefreshToken.updateMany(
+      { rotatedAt: { $ne: null } },
+      { $set: { rotatedAt: new Date(Date.now() - REFRESH_TOKEN_GRACE_MS - 1000) } }
+    );
     await api().post("/auth/refresh").send({ refreshToken }).expect(401);
 
     // The rotated one works, and its access token is accepted
@@ -252,6 +263,57 @@ describe("account recovery", () => {
       .set(auth(tokenFor(user)))
       .send({ password: "password123", email: { nested: [{ $where: "1" }] } })
       .expect(400);
+  });
+});
+
+describe("email case", () => {
+  test("signup stores the email lowercased and treats case variants as taken", async () => {
+    const { user: inviter } = await createUser({ username: "inviteruser" });
+    const res = await api()
+      .post("/auth/signup")
+      .send({
+        username: "casemember",
+        password: "password123",
+        email: "  John.Smith@Example.COM ",
+        uniqueId: inviter.uniqueId,
+      })
+      .expect(201);
+    assert.equal((await User().findById(res.body._id)).email, "john.smith@example.com");
+
+    await api()
+      .post("/auth/signup")
+      .send({
+        username: "othermember",
+        password: "password123",
+        email: "JOHN.SMITH@example.com",
+        uniqueId: inviter.uniqueId,
+      })
+      .expect(400);
+  });
+
+  test("lookups find accounts whose email was stored with capitals", async () => {
+    const { user } = await createUser({ username: "legacyuser", email: "Legacy.User@Example.com" });
+    const { findUserByEmail } = await import("../src/utility/email.js");
+
+    // What the app sends for account recovery: lowercased
+    const found = await findUserByEmail("legacy.user@example.com");
+    assert.ok(found?._id.equals(user._id));
+    const withUsername = await findUserByEmail("LEGACY.user@example.com", { username: "legacyuser" });
+    assert.ok(withUsername?._id.equals(user._id));
+    assert.equal(await findUserByEmail("legacy.user@example.com", { username: "someoneelse" }), null);
+    // Regex characters in the input match only themselves
+    assert.equal(await findUserByEmail("legacy.user@example.co."), null);
+    assert.equal(await findUserByEmail(".*"), null);
+  });
+
+  test("updating the email stores it lowercased", async () => {
+    const { user, password } = await createUser({ username: "changeuser" });
+    await api()
+      .put("/users/updateemail")
+      .set(auth(tokenFor(user)))
+      .send({ password, email: "New.Address@Example.com" })
+      .expect(200);
+    assert.equal((await User().findById(user._id)).email, "new.address@example.com");
   });
 });
 

@@ -11,6 +11,7 @@ import {
 } from "../services/messagePurgeService.js";
 import { deleteUserAccount } from "../services/userDeletionService.js";
 import { createUserWithFriend } from "../services/userCreationService.js";
+import { normalizeEmail, findUserByEmail } from "../utility/email.js";
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
@@ -99,7 +100,7 @@ export const createUser = async (req, res) => {
     }
 
     const emailValue =
-      (email || "").trim() || `${usernameValue}@${PLACEHOLDER_EMAIL_DOMAIN}`;
+      normalizeEmail(email) || `${usernameValue}@${PLACEHOLDER_EMAIL_DOMAIN}`;
     if (emailValue.length > 254 || !EMAIL_PATTERN.test(emailValue)) {
       return res.status(400).json({ error: "Email address is invalid" });
     }
@@ -109,7 +110,7 @@ export const createUser = async (req, res) => {
     const [usernameTaken, uniqueIdTaken, emailTaken] = await Promise.all([
       User.exists({ $or: [{ username: usernameValue }, { uniqueId: usernameValue }] }),
       uniqueIdValue !== usernameValue ? User.exists({ uniqueId: uniqueIdValue }) : null,
-      User.exists({ email: emailValue }),
+      findUserByEmail(emailValue),
     ]);
     if (usernameTaken) return res.status(409).json({ error: "Username is taken" });
     if (uniqueIdTaken) return res.status(409).json({ error: "Unique ID is taken" });

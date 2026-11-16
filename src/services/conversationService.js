@@ -130,12 +130,24 @@ const isBlockedEitherWay = async (userIdA, userIdB) =>
     })
   );
 
+// Direct chats are between friends. Friendship is mutual (accepting adds
+// both sides), so one side's list is enough to check.
+const isFriendOf = async (userId, otherUserId) =>
+  Boolean(await User.exists({ _id: userId, friendList: otherUserId }));
+
+export const NOT_FRIENDS_ERROR = "You can only message friends";
+
 export const findOrCreateDirectConversation = async (userIdA, userIdB) => {
   // Blocking deletes the direct conversation; without this check either
   // side could simply recreate it with POST /conversations/direct and
   // keep messaging.
   if (await isBlockedEitherWay(userIdA, userIdB)) {
     throw new HttpError(400, "Cannot start a conversation with this user");
+  }
+  // Without this anyone who learns a user id (e.g. from a shared group)
+  // could open a direct chat with them
+  if (!(await isFriendOf(userIdA, userIdB))) {
+    throw new HttpError(400, NOT_FRIENDS_ERROR);
   }
 
   const directKey = Conversation.buildDirectKey(userIdA, userIdB);
@@ -202,6 +214,12 @@ export const postMessage = async ({
       (m) => m.userId.toString() !== senderId.toString()
     );
     receiverId = other ? other.userId : null;
+    // Removing a friend leaves the conversation in place (its history comes
+    // back if they become friends again), so a chat that was already open
+    // must not keep accepting messages
+    if (receiverId && !(await isFriendOf(senderId, receiverId))) {
+      throw new HttpError(400, NOT_FRIENDS_ERROR);
+    }
   }
 
   let newMessage;

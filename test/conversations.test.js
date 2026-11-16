@@ -131,6 +131,34 @@ describe("direct conversations", () => {
   });
 });
 
+describe("direct conversations are between friends", () => {
+  test("a stranger cannot open a direct conversation", async () => {
+    const { alice, as } = await setupUsers();
+    const res = await openDirect(as.mallory, alice._id);
+    assert.equal(res.status, 400);
+    assert.equal(res.body.error, "You can only message friends");
+  });
+
+  test("clearing from both sides reports that the conversation was deleted", async () => {
+    const { alice, bob, as } = await setupUsers();
+    const { body } = await openDirect(as.alice, bob._id).expect(200);
+    const sent = await api()
+      .post(`/conversations/${body.conversationId}/messages`)
+      .set(as.alice)
+      .send({ message: "bye" })
+      .expect(200);
+
+    const first = await api().delete(`/messages/delete/${sent.body.messageId}`).set(as.alice).expect(200);
+    assert.equal(first.body.conversationDeleted, false);
+    const second = await api().delete(`/messages/delete/${sent.body.messageId}`).set(as.bob).expect(200);
+    assert.equal(second.body.conversationDeleted, true);
+
+    // Reopening gives a fresh conversation
+    const reopened = await openDirect(as.bob, alice._id).expect(200);
+    assert.notEqual(reopened.body.conversationId, body.conversationId);
+  });
+});
+
 describe("group conversations", () => {
   test("a group can only be created with the creator's friends", async () => {
     const { bob, mallory, as } = await setupUsers();

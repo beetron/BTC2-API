@@ -95,6 +95,12 @@ export const createGroup = async (req, res) => {
         io.sockets.sockets.get(socketId)?.join(conversationId);
       });
     });
+    // Lets invited members' chat lists show the new group right away
+    // instead of on their next refresh
+    io.to(conversationId).emit("conversation:memberAdded", {
+      conversationId,
+      memberIds: conversation.members.map((m) => m.userId.toString()),
+    });
 
     res.status(201).json(conversation);
   } catch (error) {
@@ -353,15 +359,15 @@ export const removeMember = async (req, res) => {
       targetUserId,
     });
 
-    getReceiverSocketIds(targetUserId).forEach((socketId) => {
-      io.sockets.sockets.get(socketId)?.leave(conversationId);
-    });
-    // conversationDeleted only ever happens when targetUserId was the last
-    // active member -- their own sockets just left the room above, so
-    // there's nobody else left in it to notify.
+    // Sent before the removed member's sockets leave the room, so they are
+    // told too: their app drops the group from the list and closes it if
+    // it is open, instead of failing on the next send
     io.to(conversationId).emit("conversation:memberRemoved", {
       conversationId,
       userId: targetUserId,
+    });
+    getReceiverSocketIds(targetUserId).forEach((socketId) => {
+      io.sockets.sockets.get(socketId)?.leave(conversationId);
     });
 
     res.status(200).json({ ...conversation.toObject(), conversationDeleted });
