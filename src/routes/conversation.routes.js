@@ -10,6 +10,7 @@ import {
   createGroup,
   getMessages,
   getMessageChanges,
+  markRead,
   postMessage,
   editMessage,
   deleteMessage,
@@ -34,6 +35,7 @@ router.get("/:id", protectRoute, validId, getConversation);
 router.get("/:id/messages", protectRoute, validId, getMessages);
 router.get("/:id/messages/changes", protectRoute, validId, getMessageChanges);
 router.post("/:id/messages", protectRoute, validId, postMessage);
+router.post("/:id/read", protectRoute, validId, markRead);
 // Edit / delete for everyone: the sender's own messages only
 const validMessageId = validateObjectId("id", "messageId");
 router.patch("/:id/messages/:messageId", protectRoute, validMessageId, editMessage);

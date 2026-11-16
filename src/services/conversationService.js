@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Conversation from "../models/conversation.model.js";
 import ConversationReadState from "../models/conversationReadState.model.js";
 import Message from "../models/message.model.js";
@@ -323,6 +324,113 @@ export const getConversationMessages = async (
   return {
     messages: await withReplyPreviews(messages, conversation._id),
     nextCursor,
+  };
+};
+
+// The caller's unread total across every conversation: the app icon badge.
+// Uses the { userId } index on read states.
+export const getTotalUnread = async (userId) => {
+  const [{ totalUnread = 0 } = {}] = await ConversationReadState.aggregate([
+    { $match: { userId: new mongoose.Types.ObjectId(`${userId}`) } },
+    { $group: { _id: null, totalUnread: { $sum: "$unreadCount" } } },
+  ]);
+  return totalUnread;
+};
+
+const isAtOrAfter = (a, b) => {
+  const at = a.createdAt.getTime();
+  const bt = b.createdAt.getTime();
+  return at > bt || (at === bt && a._id.toString() >= b._id.toString());
+};
+
+// How many times markConversationRead retries when a new message lands
+// between its count and its write
+const MARK_READ_ATTEMPTS = 3;
+
+// "I have seen up to messageId": for a client that has a conversation open
+// and new messages arrive in it. Opening the thread already marks it read
+// (getConversationMessages); this covers what comes in after that.
+//
+// The marker only ever moves forward, so a late, out-of-order or other-
+// device request can't mark seen messages unread again. Messages from
+// others newer than messageId stay counted. The write is a compare-and-set
+// on the state read here: if postMessage increments the counter in
+// between, the write misses and the count is redone instead of wiping
+// that new message's count.
+export const markConversationRead = async ({ conversationId, userId, messageId }) => {
+  if (!isObjectIdString(messageId)) throw new HttpError(400, "Invalid messageId");
+  const conversation = await loadConversationForMember(conversationId, userId);
+  const message = await Message.findOne({ _id: messageId, conversationId: conversation._id })
+    .select("createdAt")
+    .lean();
+  if (!message) throw new HttpError(404, "Message not found in this conversation");
+
+  const key = { conversationId: conversation._id, userId };
+
+  for (let attempt = 0; attempt < MARK_READ_ATTEMPTS; attempt++) {
+    const state = await ConversationReadState.findOne(key)
+      .select("lastReadMessageId unreadCount")
+      .lean();
+
+    if (state?.lastReadMessageId) {
+      const marker = state.lastReadMessageId.equals(message._id)
+        ? message
+        : await Message.findById(state.lastReadMessageId).select("createdAt").lean();
+      // Already read further: leave the newer marker and its count alone.
+      // Marking the marker message itself again only recounts if its
+      // count is off.
+      const readFurther = marker && isAtOrAfter(marker, message);
+      if (readFurther && (!marker._id.equals(message._id) || state.unreadCount === 0)) {
+        return {
+          lastReadMessageId: state.lastReadMessageId,
+          unreadCount: state.unreadCount,
+        };
+      }
+    }
+
+    // Normally 0: the client marks the newest message it has. Walks only
+    // messages newer than this one on the { conversationId, createdAt } index.
+    const unreadCount = await Message.countDocuments({
+      conversationId: conversation._id,
+      senderId: { $ne: userId },
+      deletedAt: null,
+      $or: [
+        { createdAt: { $gt: message.createdAt } },
+        { createdAt: message.createdAt, _id: { $gt: message._id } },
+      ],
+    });
+    const update = { $set: { lastReadMessageId: message._id, unreadCount } };
+
+    if (!state) {
+      try {
+        await ConversationReadState.create({ ...key, ...update.$set });
+        return { lastReadMessageId: message._id, unreadCount };
+      } catch (error) {
+        // Another request created the row first: go round again
+        if (error.code !== 11000) throw error;
+        continue;
+      }
+    }
+
+    const { matchedCount } = await ConversationReadState.updateOne(
+      {
+        _id: state._id,
+        lastReadMessageId: state.lastReadMessageId,
+        unreadCount: state.unreadCount,
+      },
+      update
+    );
+    if (matchedCount === 1) return { lastReadMessageId: message._id, unreadCount };
+  }
+
+  // Lost the race every time (a burst of incoming messages): leave the
+  // state to the newer writes, the client marks again as they arrive
+  const state = await ConversationReadState.findOne(key)
+    .select("lastReadMessageId unreadCount")
+    .lean();
+  return {
+    lastReadMessageId: state?.lastReadMessageId ?? null,
+    unreadCount: state?.unreadCount ?? 0,
   };
 };
 

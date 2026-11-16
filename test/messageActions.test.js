@@ -586,7 +586,7 @@ describe("events and features", () => {
 
   test("/config lists the new features", async () => {
     const res = await api().get("/config").expect(200);
-    for (const feature of ["reply", "edit", "delete", "messageChanges", "clientMessageId"]) {
+    for (const feature of ["reply", "edit", "delete", "messageChanges", "clientMessageId", "markRead"]) {
       assert.ok(res.body.features.includes(feature), feature);
     }
     assert.ok(res.body.apiVersion);

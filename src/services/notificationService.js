@@ -1,8 +1,7 @@
 import { getMessaging } from "firebase-admin/messaging";
 import firebaseApp from "../firebase/firebaseAdmin.js";
 import User from "../models/user.model.js";
-import ConversationReadState from "../models/conversationReadState.model.js";
-import { ObjectId } from "mongodb";
+import { getTotalUnread } from "./conversationService.js";
 
 export const notificationService = async (recipientId, data) => {
   // Firebase is only left uninitialised under NODE_ENV=test
@@ -21,21 +20,8 @@ export const notificationService = async (recipientId, data) => {
 
     const tokens = recipient.fcmTokens.map((t) => t.token);
 
-    // Convert recipientId to mongo ObjectId
-    const ownerObjectId = new ObjectId(`${recipientId}`);
-
-    // aggregate unreadCount across *recipient* conversations
-    const [{ totalUnread = 0 } = {}] = await ConversationReadState.aggregate([
-      {
-        $match: { userId: ownerObjectId },
-      },
-      {
-        $group: {
-          _id: null,
-          totalUnread: { $sum: "$unreadCount" },
-        },
-      },
-    ]);
+    // Same total the app sets after marking a chat read
+    const totalUnread = await getTotalUnread(recipientId);
 
     const message = {
       tokens: tokens,
