@@ -88,6 +88,11 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Registering a push token removes it from every other account (a phone
+// belongs to whoever signed in on it last); these keep that lookup indexed
+userSchema.index({ "fcmTokens.token": 1 });
+userSchema.index({ "fcmTokens.deviceId": 1 });
+
 const User = mongoose.model("User", userSchema);
 
 export default User;

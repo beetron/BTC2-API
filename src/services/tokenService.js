@@ -27,23 +27,43 @@ export const generateRefreshToken = async (userId) => {
   return token;
 };
 
+// How long a rotated refresh token can still be exchanged. Covers a
+// refresh whose response never reached the app (timeout, app suspended
+// mid-request): the app still holds the old token and would otherwise be
+// signed out on its next refresh.
+export const REFRESH_TOKEN_GRACE_MS = 5 * 60 * 1000;
+
 /////////////////////////////////////////////
-// Validate + rotate a refresh token: the old one is deleted and a new one
-// issued with a fresh 14-day expiry. Returns null if the token is unknown
-// or expired (caller should require the user to log in again).
+// Validate + rotate a refresh token: a new one is issued with a fresh
+// 14-day expiry, and the old one expires after REFRESH_TOKEN_GRACE_MS
+// (the TTL index then deletes it). Returns null if the token is unknown,
+// expired, or was rotated longer ago than the grace period (caller should
+// require the user to log in again).
 /////////////////////////////////////////////
 export const rotateRefreshToken = async (token) => {
-  // findOneAndDelete is atomic at the DB level -- a separate findOne +
-  // deleteOne would let two truly concurrent requests (e.g. two browser
-  // tabs refreshing at the same instant) both pass the "does this exist"
-  // check before either delete lands, letting the same token mint two
-  // children instead of one. That breaks one-time use.
-  const existing = await RefreshToken.findOneAndDelete({
-    tokenHash: hashToken(token),
-  });
-  if (!existing) return null;
+  const tokenHash = hashToken(token);
+  const now = new Date();
 
-  if (existing.expiresAt < new Date()) return null;
+  // Atomic: of two requests rotating the same unused token at once, only
+  // one gets here; the other goes through the grace check below
+  let existing = await RefreshToken.findOneAndUpdate(
+    { tokenHash, rotatedAt: null, expiresAt: { $gt: now } },
+    {
+      $set: {
+        rotatedAt: now,
+        expiresAt: new Date(now.getTime() + REFRESH_TOKEN_GRACE_MS),
+      },
+    }
+  );
+  if (!existing) {
+    // Already rotated: accepted again only inside the grace period
+    existing = await RefreshToken.findOne({
+      tokenHash,
+      rotatedAt: { $gt: new Date(now.getTime() - REFRESH_TOKEN_GRACE_MS) },
+      expiresAt: { $gt: now },
+    });
+  }
+  if (!existing) return null;
 
   const refreshToken = await generateRefreshToken(existing.userId);
   return {

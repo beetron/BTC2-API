@@ -9,6 +9,7 @@ import { sendEmail } from "../utility/sendEmail.js";
 import { handleImageFileCleanup } from "../utility/imageCleanup.js";
 import Message from "../models/message.model.js";
 import { isAdminUser } from "../middleware/requireAdmin.js";
+import { normalizeEmail, findUserByEmail } from "../utility/email.js";
 
 // Used for getting the curent directory path regardless of environment
 const __filename = fileURLToPath(import.meta.url);
@@ -170,6 +171,12 @@ export const addFriendRequest = async (req, res) => {
       return res.status(200).json({ message: "Friend request sent" });
     }
 
+    // Someone you blocked has to be unblocked first; otherwise accepting
+    // would put them in your friend list and your blocked list at once
+    if (user.blockedUsers?.some((id) => id.equals(requestReceiver._id))) {
+      return res.status(400).json({ error: "Unblock this user first" });
+    }
+
     // Check if user is already pending add request
     if (requestReceiver.friendRequests.includes(user._id)) {
       console.log({ error: "Friend request already sent" });
@@ -205,10 +212,8 @@ export const acceptFriendRequest = async (req, res) => {
   try {
     // Find user sending the friend request
     const requestSender = await User.findOne({ uniqueId }).select(
-      "_id friendList friendRequests"
+      "_id friendList friendRequests blockedUsers"
     );
-
-    console.log("Request sender: ", requestSender);
 
     // Check if requester exists
     if (!requestSender) {
@@ -220,6 +225,21 @@ export const acceptFriendRequest = async (req, res) => {
     // Check if requester is already a friend
     if (user.friendList.includes(requestSender._id)) {
       return res.status(400).json({ error: "Already friends" });
+    }
+
+    // Only a request that is actually pending can be accepted. Without
+    // this anyone who knows a uniqueId could make themselves that user's
+    // friend. A block either way also ends it: the same answer is given,
+    // so a block isn't revealed.
+    const blocked =
+      user.blockedUsers?.some((id) => id.equals(requestSender._id)) ||
+      requestSender.blockedUsers?.some((id) => id.equals(user._id));
+    if (!user.friendRequests.some((id) => id.equals(requestSender._id)) || blocked) {
+      if (blocked) {
+        user.friendRequests.pull(requestSender._id);
+        await user.save();
+      }
+      return res.status(400).json({ error: "No friend request from this user" });
     }
 
     // Update user's friend list
@@ -322,6 +342,20 @@ export const removeFriend = async (req, res) => {
 
     // Save friendToRemove database
     await friendToRemove.save();
+
+    // The direct chat is no longer listed or writable for either side, so
+    // its unread messages must stop counting toward the app icon badge
+    const conversation = await Conversation.findOne({
+      directKey: Conversation.buildDirectKey(user._id, friendToRemove._id),
+    })
+      .select("_id")
+      .lean();
+    if (conversation) {
+      await ConversationReadState.updateMany(
+        { conversationId: conversation._id, unreadCount: { $gt: 0 } },
+        { $set: { unreadCount: 0 } }
+      );
+    }
 
     return res.status(200).json({ message: "Friend removed" });
   } catch (error) {
@@ -731,7 +765,8 @@ export const updateEmail = async (req, res) => {
   const userId = req.user._id;
 
   // Retrieve email and password from request body
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const email = normalizeEmail(req.body.email);
 
   try {
     // Check if password is provided
@@ -753,10 +788,10 @@ export const updateEmail = async (req, res) => {
     }
 
     // Check if email is already taken
-    const emailExists = await User.findOne({
-      email,
-      _id: { $ne: userId },
-    });
+    if (!email) {
+      return res.status(400).json({ error: "Email address is required" });
+    }
+    const emailExists = await findUserByEmail(email, { _id: { $ne: userId } });
     if (emailExists) {
       return res.status(400).json({ error: "Email already taken" });
     }
@@ -780,7 +815,7 @@ export const registerFcmToken = async (req, res) => {
   console.log("user.controller, registerFcmToken called: ", device);
 
   try {
-    if (!token) {
+    if (!token || typeof token !== "string") {
       return res.status(400).json({ error: "FCM token is missing" });
     }
 
@@ -812,6 +847,24 @@ export const registerFcmToken = async (req, res) => {
     }
 
     await user.save();
+
+    // A device belongs to whoever signed in on it last. If the previous
+    // account's logout never reached us (offline), its entry for this token
+    // or device is still there and would keep sending that account's
+    // notifications to this phone.
+    const others = { _id: { $ne: user._id } };
+    await Promise.all([
+      User.updateMany(
+        { ...others, "fcmTokens.token": token },
+        { $pull: { fcmTokens: { token } } }
+      ),
+      typeof deviceId === "string" && deviceId
+        ? User.updateMany(
+            { ...others, "fcmTokens.deviceId": deviceId },
+            { $pull: { fcmTokens: { deviceId } } }
+          )
+        : null,
+    ]);
 
     return res.status(200).json({
       message: entryIndex !== -1 ? "FCM token updated" : "FCM token registered",

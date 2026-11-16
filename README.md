@@ -145,7 +145,7 @@ Every login/signup issues **two tokens**:
 | Access token | JWT | 7 days | Sent as `Authorization: Bearer <token>` on every request and as `auth: { token }` on the Socket.IO handshake |
 | Refresh token | Opaque random (384-bit) | 14 days, **sliding** | Exchanged via `POST /auth/refresh` for a new access + refresh pair |
 
-- The refresh token is **rotated on every use** (one-time use, enforced atomically at the DB level): each call to `/auth/refresh` deletes the old one and issues a new one with a fresh 14-day expiry. A client that returns at least once every 14 days never has to re-enter credentials; one that goes quiet longer must log in again.
+- The refresh token is **rotated on every use** (enforced atomically at the DB level): each call to `/auth/refresh` issues a new one with a fresh 14-day expiry, and the old one stays usable for a 5-minute grace period only, so a refresh whose response never reached the app (timeout, app suspended) doesn't sign the user out. A client that returns at least once every 14 days never has to re-enter credentials; one that goes quiet longer must log in again.
 - Only a **hash** of the refresh token is stored (`RefreshToken` model), the same rationale as password hashing — a database leak alone can't be used to impersonate a session.
 - `POST /auth/logout` revokes the refresh token server-side immediately, rather than only relying on the client discarding it.
 - Access tokens are otherwise stateless, with one server-side check: a user's `sessionsRevokedAt` rejects every access and refresh token issued before it (REST and socket handshake). Admin edits and account deletion set it, which signs the user out on every device. Expired or invalid access tokens return `401` so clients refresh.
@@ -154,7 +154,10 @@ Every login/signup issues **two tokens**:
 
 Direct (1:1) and group chats share a single `Conversation` model.
 
-- **Direct** conversations are found-or-created on demand (`POST /conversations/direct`) — a `directKey` derived from the sorted pair of user IDs prevents duplicates.
+- **Direct** conversations are found-or-created on demand (`POST /conversations/direct`) — a `directKey` derived from the sorted pair of user IDs prevents duplicates. Both opening one and sending in one require the two users to be friends (`400 "You can only message friends"`); removing a friend keeps the conversation (its history returns if they become friends again) but resets its unread counts.
+- Friend requests: only a request that is actually pending can be accepted, and a block either way ends it. A user you blocked can't be sent a request until you unblock them (`400 "Unblock this user first"`).
+- Email addresses are stored lowercased and matched without regard to case (signup, update, account recovery); addresses stored before this with capitals are still found.
+- Registering a push token (`PUT /users/fcm/register`) removes that token and device from every other account, so a phone only gets notifications for whoever signed in on it last.
 - **Group** conversations have members with a role: `owner` (creator) or `member`. Only the owner can rename a group or remove another member; anyone can add their own friends and can remove themselves (leave). When the owner leaves, the longest-standing member becomes owner, and a group with no members left is deleted.
 - Adding someone to a group requires the *actor* to be friends with them — there's no requirement that all group members be mutual friends with each other (same model most chat apps use: whoever adds you vouches for you, not everyone already knows everyone).
 - Message history is **cursor-paginated** (`GET /conversations/:id/messages`), newest page first.
@@ -188,8 +191,9 @@ Direct (1:1) and group chats share a single `Conversation` model.
 - Each socket also joins a `user:<userId>` room, so all of one user's devices can be disconnected at once (admin edits, account deletion).
 - Events emitted to clients:
   - `conversation:message`: `{ conversationId, messageId, senderId, clientMessageId, action }`, a message in a direct or group conversation was created, edited or deleted (`action` is `"created"`, `"edited"` or `"deleted"`; `clientMessageId` is `null` when the sender gave none). Clients that ignore `action` just refetch, which already shows edits and drops deleted messages. After an admin deletes a user's messages it is sent as `{ conversationId }` only, so clients refetch the thread.
-  - `conversation:memberAdded` — `{ conversationId, memberIds }`
-  - `conversation:memberRemoved` — `{ conversationId, userId }`
+  - `conversation:memberAdded` — `{ conversationId, memberIds }`, also sent when a group is created
+  - `conversation:memberRemoved` — `{ conversationId, userId }`, the removed member receives it too
+  - `conversation:deleted` — `{ conversationId }`, both sides of a direct chat cleared their history, so the conversation was removed; open clients move to a new one via `POST /conversations/direct`
   - `conversation:updated` — `{ conversationId, name, avatar }`, group renamed/avatar changed
 - All communication is over HTTP/WS (no SSL/HTTPS at this layer — see [Deployment](#-deployment)).
 
@@ -255,7 +259,7 @@ Direct (1:1) and group chats share a single `Conversation` model.
 | Method | Path | Description |
 |---|---|---|
 | GET | `/uploads/images/:filename` | Get a message image (direct and group uploads) |
-| DELETE | `/delete/:id` | Clear history up to a message |
+| DELETE | `/delete/:id` | Clear history up to a message; `conversationDeleted: true` when both sides of a direct chat have now cleared it |
 
 ### Link Preview — `/link-preview`
 

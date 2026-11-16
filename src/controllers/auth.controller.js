@@ -11,6 +11,7 @@ import { dateNow } from "../utility/dateNow.js";
 import { isRefreshTokenRevoked } from "../utility/sessionRevocation.js";
 import { deleteUserAccount } from "../services/userDeletionService.js";
 import { createUserWithFriend } from "../services/userCreationService.js";
+import { normalizeEmail, findUserByEmail } from "../utility/email.js";
 
 /////////////////////////////////////////////
 // Signup (signup assigns username as the default uniqueId)
@@ -18,7 +19,8 @@ import { createUserWithFriend } from "../services/userCreationService.js";
 export const signup = async (req, res) => {
   try {
     const timeNow = dateNow();
-    const { username, password, email, uniqueId } = req.body;
+    const { username, password, uniqueId } = req.body;
+    const email = normalizeEmail(req.body.email);
 
     // Check if friend's uniqueId exists
     const friend = await User.findOne({ uniqueId });
@@ -40,12 +42,12 @@ export const signup = async (req, res) => {
     }
 
     // Check if email address is not blank
-    if (!email || email.trim() === "") {
+    if (!email) {
       return res.status(400).json({ error: "Email address is required" });
     }
 
     // Check if email address is not in use
-    const emailInUse = await User.findOne({ email });
+    const emailInUse = await findUserByEmail(email);
     if (emailInUse) {
       return res.status(400).json({ error: "Email address is already in use" });
     }
@@ -190,14 +192,14 @@ export const forgotUsername = async (req, res) => {
 
   try {
     // Find user by email
-    const user = await User.findOne({ email });
+    const user = await findUserByEmail(email);
     if (!user) {
       return res.status(404).json({ error: "Email not found" });
     }
 
     // Send username to user's email
     await sendEmail({
-      to: email,
+      to: user.email,
       subject: "BTC2 - Username Recovery",
       text: `Your username is: ${user.username}\n\nIf you did not request this email, someone may be trying to access your account.`,
     });
@@ -222,7 +224,7 @@ export const forgotPassword = async (req, res) => {
     const usernameLowerCase = username.toLowerCase();
 
     // Find user by username and email
-    const user = await User.findOne({ username: usernameLowerCase, email });
+    const user = await findUserByEmail(email, { username: usernameLowerCase });
     if (!user) {
       return res.status(404).json({ error: "Username or email not found" });
     }
@@ -239,7 +241,7 @@ export const forgotPassword = async (req, res) => {
 
     // Send email with temporary password
     await sendEmail({
-      to: email,
+      to: user.email,
       subject: "BTC2 - Password Reset",
       text: `Your temporary password is: ${tempPassword}\n\nPlease log in and change your password.`,
     });

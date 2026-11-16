@@ -18,6 +18,12 @@ const refreshTokenSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
+    // Set when the token is exchanged for a new one. It then stays usable
+    // for a short grace period only (see rotateRefreshToken).
+    rotatedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

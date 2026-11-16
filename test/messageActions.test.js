@@ -584,6 +584,30 @@ describe("events and features", () => {
     assert.equal(event.payload.clientMessageId, "c-1");
   });
 
+  test("creating a group tells its members, and a removed member hears it too", async () => {
+    const { bob, carol, as } = await setupUsers();
+    const id = await openGroup(as.alice, [bob._id, carol._id]);
+
+    const added = emitted.find((e) => e.event === "conversation:memberAdded");
+    assert.equal(added.room, id);
+    assert.equal(added.payload.memberIds.length, 3);
+
+    await api().delete(`/conversations/${id}/members/${carol._id}`).set(as.alice).expect(200);
+    const removed = emitted.find((e) => e.event === "conversation:memberRemoved");
+    assert.equal(removed.payload.userId, carol._id.toString());
+  });
+
+  test("clearing a chat from both sides announces conversation:deleted", async () => {
+    const { bob, as } = await setupUsers();
+    const id = await openDirect(as.alice, bob._id);
+    const sent = await sendOk(as.alice, id, { message: "bye" });
+    await api().delete(`/messages/delete/${sent._id}`).set(as.alice).expect(200);
+    assert.equal(emitted.some((e) => e.event === "conversation:deleted"), false);
+    await api().delete(`/messages/delete/${sent._id}`).set(as.bob).expect(200);
+    const deleted = emitted.find((e) => e.event === "conversation:deleted");
+    assert.equal(deleted.payload.conversationId, id);
+  });
+
   test("/config lists the new features", async () => {
     const res = await api().get("/config").expect(200);
     for (const feature of ["reply", "edit", "delete", "messageChanges", "clientMessageId", "markRead"]) {
